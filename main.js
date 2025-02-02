@@ -105,8 +105,7 @@ server.post('/booking', async (req, res) => {
 });
 
 // 啟動 Express 伺服器
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000; // Render 使用的端口（你提到是 10000）
 server.listen(PORT, () => {
   console.log(`🚀 Server is running on port ${PORT}`);
 });
-
