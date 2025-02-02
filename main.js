@@ -84,9 +84,11 @@ server.post('/booking', async (req, res) => {
       return res.status(400).send('缺少必要的欄位');
     }
 
+    // 確保傳入的時間是台北時區
     const startTime = new Date(appointmentTime);
     const endTime = new Date(startTime.getTime() + duration * 60000);
-    
+
+    // 設置事件
     const event = {
       summary: `${service} 預約：${name}`,
       description: `電話：${phone}`,
@@ -94,6 +96,7 @@ server.post('/booking', async (req, res) => {
       end: { dateTime: endTime.toISOString(), timeZone: 'Asia/Taipei' },
     };
 
+    // 使用 Google Calendar API
     const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
     const response = await calendar.events.insert({ calendarId: CALENDAR_ID, resource: event });
 
