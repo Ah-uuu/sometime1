@@ -6,13 +6,13 @@ const fs = require('fs');
 require('dotenv').config(); // 支援環境變數
 
 const server = express();
-server.use(cors({ origin: 'https://resonant-torrone-e1f900.netlify.app' })); // 允許 Netlify 來訪問 API
+server.use(cors({ origin: 'https://dulcet-banoffee-dde2df.netlify.app' })); // 允許 Netlify 來訪問 API
 server.use(bodyParser.json());
 
 // Google OAuth 設定
 const CLIENT_ID = process.env.CLIENT_ID || '538741165835-a8m93gv79mpbe1kj2vvhejvoejtspndh.apps.googleusercontent.com';
 const CLIENT_SECRET = process.env.CLIENT_SECRET || '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';
-const REDIRECT_URI = process.env.REDIRECT_URI || 'https://somebooking.onrender.com/oauth2callback'; // 這裡之後要改成 Render URL
+const REDIRECT_URI = process.env.REDIRECT_URI || 'https://booking-k1q8.onrender.com/oauth2callback'; // 這裡之後要改成 Render URL
 const oauth2Client = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI);
 
 const TOKEN_PATH = 'tokens.json';
