@@ -20,7 +20,8 @@
     "cors": "^2.8.5",
     "express": "^4.21.2",
     "google-auth-library": "^9.15.1",
-    "googleapis": "^144.0.0"
+    "googleapis": "^144.0.0",
+    "moment-timezone": "^0.5.47"
   },
   "build": {
     "appId": "com.example.my-electron-app",
