@@ -3,6 +3,7 @@ const cors = require('cors');
 const { google } = require('googleapis');
 const bodyParser = require('body-parser');
 const fs = require('fs');
+const moment = require('moment-timezone'); // 引入 moment-timezone
 require('dotenv').config(); // 支援環境變數
 
 const server = express();
@@ -84,16 +85,16 @@ server.post('/booking', async (req, res) => {
       return res.status(400).send('缺少必要的欄位');
     }
 
-    // 確保傳入的時間是台北時區
-    const startTime = new Date(appointmentTime);
-    const endTime = new Date(startTime.getTime() + duration * 60000);
+    // 使用 moment-timezone 轉換時間
+    const startTime = moment.tz(appointmentTime, 'Asia/Taipei').toISOString();
+    const endTime = moment.tz(new Date(new Date(appointmentTime).getTime() + duration * 60000), 'Asia/Taipei').toISOString();
 
     // 設置事件
     const event = {
       summary: `${service} 預約：${name}`,
       description: `電話：${phone}`,
-      start: { dateTime: startTime.toISOString(), timeZone: 'Asia/Taipei' },
-      end: { dateTime: endTime.toISOString(), timeZone: 'Asia/Taipei' },
+      start: { dateTime: startTime, timeZone: 'Asia/Taipei' },
+      end: { dateTime: endTime, timeZone: 'Asia/Taipei' },
     };
 
     // 使用 Google Calendar API
@@ -112,3 +113,4 @@ const PORT = process.env.PORT || 10000; // Render 使用的端口（你提到是
 server.listen(PORT, () => {
   console.log(`🚀 Server is running on port ${PORT}`);
 });
+
