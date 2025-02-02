@@ -1,30 +1,28 @@
-const { app, BrowserWindow } = require('electron');
-const path = require('path');
 const express = require('express');
 const cors = require('cors');
 const { google } = require('googleapis');
 const bodyParser = require('body-parser');
 const fs = require('fs');
+require('dotenv').config(); // 支援環境變數
 
-// 創建 Express 應用
 const server = express();
-server.use(cors({ origin: 'https://frabjous-chimera-18a846.netlify.app' }));  // 更新 CORS 設置
+server.use(cors({ origin: 'https://frabjous-chimera-18a846.netlify.app' })); // 允許 Netlify 來訪問 API
 server.use(bodyParser.json());
 
 // Google OAuth 設定
-const CLIENT_ID = '538741165835-a8m93gv79mpbe1kj2vvhejvoejtspndh.apps.googleusercontent.com';
-const CLIENT_SECRET = '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';
-const REDIRECT_URI = 'http://localhost:3000/oauth2callback';  // 更新回調 URL
+const CLIENT_ID = process.env.CLIENT_ID || '538741165835-a8m93gv79mpbe1kj2vvhejvoejtspndh.apps.googleusercontent.com';
+const CLIENT_SECRET = process.env.CLIENT_SECRET || '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';
+const REDIRECT_URI = process.env.REDIRECT_URI || 'https://somebooking.onrender.com/oauth2callback'; // 這裡之後要改成 Render URL
 const oauth2Client = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI);
 
 const TOKEN_PATH = 'tokens.json';
-const CALENDAR_ID = 'z033910751@gmail.com';
+const CALENDAR_ID = process.env.CALENDAR_ID || 'z033910751@gmail.com';
 
 // 產生 Google OAuth2 登入網址
 server.get('/auth', (req, res) => {
   const authUrl = oauth2Client.generateAuthUrl({
     access_type: 'offline',
-    prompt: 'consent', // 確保 refresh_token 可用
+    prompt: 'consent',
     scope: ['https://www.googleapis.com/auth/calendar'],
   });
   res.redirect(authUrl);
@@ -107,36 +105,8 @@ server.post('/booking', async (req, res) => {
 });
 
 // 啟動 Express 伺服器
-server.listen(3000, () => {
-  console.log('🚀 Server is running on https://frabjous-chimera-18a846.netlify.app');
-});
-
-// 創建 Electron 窗口
-function createWindow() {
-  const win = new BrowserWindow({
-    width: 800,
-    height: 600,
-    webPreferences: {
-      nodeIntegration: true,
-      preload: path.join(__dirname, 'preload.js'),
-    },
-  });
-  win.loadURL('https://frabjous-chimera-18a846.netlify.app');  // 更新 URL
-  win.webContents.openDevTools();
-}
-
-app.whenReady().then(() => {
-  createWindow();
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
-    }
-  });
-});
-
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+  console.log(`🚀 Server is running on port ${PORT}`);
 });
 
