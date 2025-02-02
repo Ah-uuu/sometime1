@@ -7,7 +7,7 @@ const moment = require('moment-timezone'); // 引入 moment-timezone
 require('dotenv').config(); // 支援環境變數
 
 const server = express();
-server.use(cors({ origin: 'https://dulcet-banoffee-dde2df.netlify.app' })); // 允許 Netlify 來訪問 API
+server.use(cors({ origin: 'https://scintillating-duckanoo-428640.netlify.app' })); // 允許 Netlify 來訪問 API
 server.use(bodyParser.json());
 
 // Google OAuth 設定
