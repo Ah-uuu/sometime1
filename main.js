@@ -6,7 +6,7 @@ const fs = require('fs');
 require('dotenv').config(); // 支援環境變數
 
 const server = express();
-server.use(cors({ origin: 'https://frabjous-chimera-18a846.netlify.app' })); // 允許 Netlify 來訪問 API
+server.use(cors({ origin: 'https://glittering-bienenstitch-2879d4.netlify.app' })); // 允許 Netlify 來訪問 API
 server.use(bodyParser.json());
 
 // Google OAuth 設定
