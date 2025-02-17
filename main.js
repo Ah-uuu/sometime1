@@ -9,16 +9,29 @@ const server = express();
 server.use(cors({ origin: 'https://scintillating-duckanoo-428640.netlify.app' }));
 server.use(bodyParser.json());
 
-// 從環境變數讀取 Service Account JSON
-const serviceAccount = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT);
-const CALENDAR_ID = process.env.CALENDAR_ID || 'your-calendar-id@group.calendar.google.com';
+// 環境變數設置
+const CALENDAR_ID = process.env.CALENDAR_ID;
+const SERVICE_ACCOUNT_JSON = process.env.SERVICE_ACCOUNT_JSON;
 
-// 使用 GoogleAuth 設定認證
+if (!SERVICE_ACCOUNT_JSON || !CALENDAR_ID) {
+  console.error('❌ 環境變數缺失：請確認 SERVICE_ACCOUNT_JSON 和 CALENDAR_ID 是否設置');
+  process.exit(1);
+}
+
+// 解析 Service Account JSON
+let serviceAccount;
+try {
+  serviceAccount = JSON.parse(SERVICE_ACCOUNT_JSON);
+} catch (error) {
+  console.error('❌ 解析 Service Account JSON 失敗:', error);
+  process.exit(1);
+}
+
+// Google Auth 設定
 const auth = new google.auth.GoogleAuth({
   credentials: serviceAccount,
   scopes: ['https://www.googleapis.com/auth/calendar'],
 });
-
 const calendar = google.calendar({ version: 'v3', auth });
 
 // 新增 Google Calendar 預約事件
@@ -59,4 +72,3 @@ const PORT = process.env.PORT || 10000;
 server.listen(PORT, () => {
   console.log(`🚀 Server is running on port ${PORT}`);
 });
-
