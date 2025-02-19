@@ -34,6 +34,11 @@ const auth = new google.auth.GoogleAuth({
 });
 const calendar = google.calendar({ version: 'v3', auth });
 
+// 健康檢查 API，防止 Render 休眠
+server.get('/health', (req, res) => {
+  res.send('✅ Server is running');
+});
+
 // 新增 Google Calendar 預約事件
 server.post('/booking', async (req, res) => {
   try {
