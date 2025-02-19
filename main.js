@@ -36,8 +36,17 @@ const calendar = google.calendar({ version: 'v3', auth });
 
 // 健康檢查 API，防止 Render 休眠
 server.get('/health', (req, res) => {
+  console.log('✅ /health API 被呼叫');
   res.send('✅ Server is running');
 });
+
+// 定期 PING 自己，防止 Render 休眠
+setInterval(() => {
+  fetch('https://booking-k1q8.onrender.com/health')
+    .then(res => res.text())
+    .then(data => console.log(`🔄 Keep-alive ping response: ${data}`))
+    .catch(err => console.error('❌ Keep-alive ping failed:', err));
+}, 600000); // 每 10 分鐘執行一次
 
 // 新增 Google Calendar 預約事件
 server.post('/booking', async (req, res) => {
@@ -47,9 +56,14 @@ server.post('/booking', async (req, res) => {
       return res.status(400).send({ success: false, message: '缺少必要的欄位' });
     }
 
+    // 確保 appointmentTime 格式正確
+    if (!moment(appointmentTime, moment.ISO_8601, true).isValid()) {
+      return res.status(400).send({ success: false, message: '時間格式錯誤' });
+    }
+
     // 轉換時間格式
     const startTime = moment.tz(appointmentTime, 'Asia/Taipei').toISOString();
-    const endTime = moment.tz(new Date(new Date(appointmentTime).getTime() + duration * 60000), 'Asia/Taipei').toISOString();
+    const endTime = moment.tz(moment(appointmentTime).add(duration, 'minutes'), 'Asia/Taipei').toISOString();
 
     // 設置事件
     const event = {
