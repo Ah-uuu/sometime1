@@ -40,13 +40,17 @@ server.get('/health', (req, res) => {
   res.send('✅ Server is running');
 });
 
-// 定期 PING 自己，防止 Render 休眠
-setInterval(() => {
-  fetch('https://booking-k1q8.onrender.com/health')
+// Keep-Alive PING 防止 Render 休眠
+const keepAlive = () => {
+  console.log('🔄 嘗試 PING /health API 以保持活躍...');
+  fetch('https://booking-k1q8.onrender.com/health', { method: 'GET' })
     .then(res => res.text())
-    .then(data => console.log(`🔄 Keep-alive ping response: ${data}`))
-    .catch(err => console.error('❌ Keep-alive ping failed:', err));
-}, 600000); // 每 10 分鐘執行一次
+    .then(data => console.log(`✅ Keep-alive ping 成功: ${data}`))
+    .catch(err => console.error('❌ Keep-alive ping 失敗:', err));
+};
+
+// 每 5 分鐘 PING 一次
+setInterval(keepAlive, 300000);
 
 // 新增 Google Calendar 預約事件
 server.post('/booking', async (req, res) => {
@@ -56,16 +60,13 @@ server.post('/booking', async (req, res) => {
       return res.status(400).send({ success: false, message: '缺少必要的欄位' });
     }
 
-    // 確保 appointmentTime 格式正確
     if (!moment(appointmentTime, moment.ISO_8601, true).isValid()) {
       return res.status(400).send({ success: false, message: '時間格式錯誤' });
     }
 
-    // 轉換時間格式
     const startTime = moment.tz(appointmentTime, 'Asia/Taipei').toISOString();
     const endTime = moment.tz(moment(appointmentTime).add(duration, 'minutes'), 'Asia/Taipei').toISOString();
 
-    // 設置事件
     const event = {
       summary: `${service} 預約：${name}`,
       description: `電話：${phone}`,
@@ -73,7 +74,6 @@ server.post('/booking', async (req, res) => {
       end: { dateTime: endTime, timeZone: 'Asia/Taipei' },
     };
 
-    // 插入事件
     const response = await calendar.events.insert({
       calendarId: CALENDAR_ID,
       resource: event,
@@ -90,4 +90,5 @@ server.post('/booking', async (req, res) => {
 const PORT = process.env.PORT || 10000;
 server.listen(PORT, () => {
   console.log(`🚀 Server is running on port ${PORT}`);
+  keepAlive(); // 立即執行一次 Keep-Alive，確保伺服器啟動後馬上 PING
 });
