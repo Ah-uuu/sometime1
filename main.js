@@ -14,26 +14,28 @@ server.use(bodyParser.json());
 const CALENDAR_ID = process.env.CALENDAR_ID;
 const SERVICE_ACCOUNT_JSON = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
 
+// 檢查環境變數並提供更詳細的錯誤訊息
 if (!SERVICE_ACCOUNT_JSON || !CALENDAR_ID) {
-  console.error('❌ 環境變數缺失：請確認 GOOGLE_SERVICE_ACCOUNT_JSON 和 CALENDAR_ID 是否設置');
-  process.exit(1);
+  console.error('❌ 環境變數缺失：');
+  if (!SERVICE_ACCOUNT_JSON) console.error('  - GOOGLE_SERVICE_ACCOUNT_JSON 未設置');
+  if (!CALENDAR_ID) console.error('  - CALENDAR_ID 未設置');
+  // 不直接退出，讓伺服器繼續運行，但功能受限
 }
 
 // 解析 Service Account JSON
-let serviceAccount;
+let auth;
 try {
-  serviceAccount = JSON.parse(SERVICE_ACCOUNT_JSON);
+  const serviceAccount = JSON.parse(SERVICE_ACCOUNT_JSON);
+  auth = new google.auth.GoogleAuth({
+    credentials: serviceAccount,
+    scopes: ['https://www.googleapis.com/auth/calendar'],
+  });
 } catch (error) {
-  console.error('❌ 解析 Service Account JSON 失敗:', error);
-  process.exit(1);
+  console.error('❌ 解析 Service Account JSON 失敗:', error.message);
+  // 不退出，讓伺服器繼續運行，後續 API 會回傳錯誤
 }
 
-// Google Auth 設定
-const auth = new google.auth.GoogleAuth({
-  credentials: serviceAccount,
-  scopes: ['https://www.googleapis.com/auth/calendar'],
-});
-const calendar = google.calendar({ version: 'v3', auth });
+const calendar = auth ? google.calendar({ version: 'v3', auth }) : null;
 
 // 健康檢查 API
 server.get('/health', (req, res) => {
@@ -55,6 +57,10 @@ setInterval(keepAlive, 300000);
 
 // 新增 Google Calendar 預約事件
 server.post('/booking', async (req, res) => {
+  if (!calendar) {
+    return res.status(500).send({ success: false, message: '伺服器配置錯誤，無法連接到 Google 日曆' });
+  }
+
   try {
     const { name, phone, service, duration, appointmentTime } = req.body;
     if (!name || !phone || !service || !duration || !appointmentTime) {
@@ -82,7 +88,7 @@ server.post('/booking', async (req, res) => {
 
     res.status(200).send({ success: true, message: '預約成功！', eventId: response.data.id });
   } catch (error) {
-    console.error('❌ 創建事件失敗:', error);
+    console.error('❌ 創建事件失敗:', error.message);
     res.status(500).send({ success: false, message: '創建事件失敗，請稍後再試！' });
   }
 });
@@ -91,5 +97,5 @@ server.post('/booking', async (req, res) => {
 const PORT = process.env.PORT || 10000;
 server.listen(PORT, () => {
   console.log(`🚀 Server is running on port ${PORT}`);
-  keepAlive(); // 立即執行一次 Keep-Alive，確保伺服器啟動後馬上 PING
+  keepAlive(); // 立即執行一次 Keep-Alive
 });
