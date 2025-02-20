@@ -3,6 +3,7 @@ const cors = require('cors');
 const { google } = require('googleapis');
 const bodyParser = require('body-parser');
 const moment = require('moment-timezone');
+const fetch = require('node-fetch');
 require('dotenv').config();
 
 const server = express();
@@ -11,10 +12,10 @@ server.use(bodyParser.json());
 
 // 環境變數設置
 const CALENDAR_ID = process.env.CALENDAR_ID;
-const SERVICE_ACCOUNT_JSON = process.env.SERVICE_ACCOUNT_JSON;
+const SERVICE_ACCOUNT_JSON = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
 
 if (!SERVICE_ACCOUNT_JSON || !CALENDAR_ID) {
-  console.error('❌ 環境變數缺失：請確認 SERVICE_ACCOUNT_JSON 和 CALENDAR_ID 是否設置');
+  console.error('❌ 環境變數缺失：請確認 GOOGLE_SERVICE_ACCOUNT_JSON 和 CALENDAR_ID 是否設置');
   process.exit(1);
 }
 
@@ -34,7 +35,7 @@ const auth = new google.auth.GoogleAuth({
 });
 const calendar = google.calendar({ version: 'v3', auth });
 
-// 健康檢查 API，防止 Render 休眠
+// 健康檢查 API
 server.get('/health', (req, res) => {
   console.log('✅ /health API 被呼叫');
   res.send('✅ Server is running');
@@ -65,7 +66,7 @@ server.post('/booking', async (req, res) => {
     }
 
     const startTime = moment.tz(appointmentTime, 'Asia/Taipei').toISOString();
-    const endTime = moment.tz(moment(appointmentTime).add(duration, 'minutes'), 'Asia/Taipei').toISOString();
+    const endTime = moment.tz(appointmentTime, 'Asia/Taipei').add(duration, 'minutes').toISOString();
 
     const event = {
       summary: `${service} 預約：${name}`,
