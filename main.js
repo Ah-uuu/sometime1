@@ -39,7 +39,8 @@ const calendar = auth ? google.calendar({ version: 'v3', auth }) : null;
 
 // 健康檢查 API
 server.get('/health', (req, res) => {
-  console.log(`✅ /health API 被呼叫於 ${new Date().toISOString()}`);
+  const source = req.headers['user-agent'] || '未知來源';
+  console.log(`✅ /health API 被呼叫於 ${new Date().toISOString()}，來源: ${source}`);
   res.send('✅ Server is running');
 });
 
