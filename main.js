@@ -39,21 +39,21 @@ const calendar = auth ? google.calendar({ version: 'v3', auth }) : null;
 
 // 健康檢查 API
 server.get('/health', (req, res) => {
-  console.log('✅ /health API 被呼叫');
+  console.log(`✅ /health API 被呼叫於 ${new Date().toISOString()}`);
   res.send('✅ Server is running');
 });
 
 // Keep-Alive PING 防止 Render 休眠
 const keepAlive = () => {
-  console.log('🔄 嘗試 PING /health API 以保持活躍...');
+  console.log(`🔄 嘗試 PING /health API 以保持活躍於 ${new Date().toISOString()}...`);
   fetch('https://booking-k1q8.onrender.com/health', { method: 'GET' })
     .then(res => res.text())
-    .then(data => console.log(`✅ Keep-alive ping 成功: ${data}`))
-    .catch(err => console.error('❌ Keep-alive ping 失敗:', err));
+    .then(data => console.log(`✅ Keep-alive ping 成功於 ${new Date().toISOString()}: ${data}`))
+    .catch(err => console.error(`❌ Keep-alive ping 失敗於 ${new Date().toISOString()}:`, err));
 };
 
-// 每 5 分鐘 PING 一次
-setInterval(keepAlive, 300000);
+// 每 10 分鐘 PING 一次（600,000 毫秒）
+setInterval(keepAlive, 600000);
 
 // 新增 Google Calendar 預約事件
 server.post('/booking', async (req, res) => {
