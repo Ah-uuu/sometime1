@@ -7,12 +7,12 @@ const fetch = require('node-fetch');
 require('dotenv').config();
 
 const server = express();
-server.use(cors({ origin: 'https://extraordinary-mermaid-aeffc9.netlify.app' }));
+server.use(cors({ origin: 'https://scintillating-duckanoo-428640.netlify.app' }));
 server.use(bodyParser.json());
 
 // 環境變數設置
 const CALENDAR_ID = process.env.CALENDAR_ID;
-const SPREADSHEET_ID = process.env.SPREADSHEET_ID; // 新增試算表 ID
+const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 const SERVICE_ACCOUNT_JSON = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
 
 if (!SERVICE_ACCOUNT_JSON || !CALENDAR_ID || !SPREADSHEET_ID) {
@@ -22,7 +22,7 @@ if (!SERVICE_ACCOUNT_JSON || !CALENDAR_ID || !SPREADSHEET_ID) {
   if (!SPREADSHEET_ID) console.error('  - SPREADSHEET_ID 未設置');
 }
 
-// Google API 認證（同時支援 Calendar 和 Sheets）
+// Google API 認證
 let auth;
 try {
   const serviceAccount = JSON.parse(SERVICE_ACCOUNT_JSON);
@@ -30,7 +30,7 @@ try {
     credentials: serviceAccount,
     scopes: [
       'https://www.googleapis.com/auth/calendar',
-      'https://www.googleapis.com/auth/spreadsheets', // 新增 Sheets API 範圍
+      'https://www.googleapis.com/auth/spreadsheets',
     ],
   });
 } catch (error) {
@@ -127,21 +127,25 @@ async function appendToSpreadsheet({ name, phone, service, duration, appointment
     const date = moment(appointmentTime).tz('Asia/Taipei').format('YYYY-MM-DD');
     const time = moment(appointmentTime).tz('Asia/Taipei').format('HH:mm');
     
+    // 匹配試算表表頭順序：日期、姓名、電話、項目、時長、預約時間、師傅、總額、備註、編號
     const values = [
       [
-        date,        // 日期
-        name,        // 姓名
-        phone,       // 電話
-        service,     // 服務項目
-        duration,    // 時長
-        time,        // 預約時間
-        master || '', // 師傅（若無則空）
+        date,        // A: 日期
+        name,        // B: 姓名
+        phone,       // C: 電話
+        service,     // D: 項目
+        duration,    // E: 時長
+        time,        // F: 預約時間
+        master || '', // G: 師傅
+        '',          // H: 總額（留空）
+        '',          // I: 備註（留空）
+        '',          // J: 編號（留空）
       ],
     ];
 
     await sheets.spreadsheets.values.append({
       spreadsheetId: SPREADSHEET_ID,
-      range: 'Sheet1!A:G', // 假設使用 Sheet1，調整為你的工作表名稱
+      range: 'Sheet1!A:J', // 調整為匹配 10 欄
       valueInputOption: 'RAW',
       insertDataOption: 'INSERT_ROWS',
       resource: { values },
@@ -213,7 +217,7 @@ server.post('/booking', async (req, res) => {
       phone,
       service,
       duration: totalDuration,
-      appointmentTime,
+      appointmentTime: startTime.toISOString(),
       master,
     });
 
