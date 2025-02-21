@@ -7,7 +7,7 @@ const fetch = require('node-fetch');
 require('dotenv').config();
 
 const server = express();
-server.use(cors({ origin: 'https://beamish-sprite-8e2570.netlify.app' }));
+server.use(cors({ origin: 'https://extraordinary-mermaid-aeffc9.netlify.app' }));
 server.use(bodyParser.json());
 
 // 環境變數設置
