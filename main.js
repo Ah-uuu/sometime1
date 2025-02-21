@@ -38,9 +38,9 @@ const calendar = auth ? google.calendar({ version: 'v3', auth }) : null;
 const SERVICES = {
   '全身按摩': { maxCapacity: 3, resource: 'body', duration: 60 },
   '半身按摩': { maxCapacity: 3, resource: 'body', duration: 30 },
-  '腳底按摩': { maxCapacity: 2, resource: 'foot', duration: 45 },
-  '腳底+全身': { components: ['腳底按摩', '全身按摩'], duration: 105 }, // 分拆為腳底和全身
-  '腳底+半身': { components: ['腳底按摩', '半身按摩'], duration: 75 }, // 分拆為腳底和半身
+  '腳底按摩': { maxCapacity: 2, resource: 'foot', duration: 40 },
+  '腳底+全身': { components: ['腳底按摩', '全身按摩'], duration: 100 }, // 分拆為腳底和全身
+  '腳底+半身': { components: ['腳底按摩', '半身按摩'], duration: 70 }, // 分拆為腳底和半身
 };
 
 // 資源容量
