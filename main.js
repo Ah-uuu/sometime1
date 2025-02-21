@@ -12,40 +12,46 @@ server.use(bodyParser.json());
 
 // 環境變數設置
 const CALENDAR_ID = process.env.CALENDAR_ID;
+const SPREADSHEET_ID = process.env.SPREADSHEET_ID; // 新增試算表 ID
 const SERVICE_ACCOUNT_JSON = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
 
-if (!SERVICE_ACCOUNT_JSON || !CALENDAR_ID) {
+if (!SERVICE_ACCOUNT_JSON || !CALENDAR_ID || !SPREADSHEET_ID) {
   console.error('❌ 環境變數缺失：');
   if (!SERVICE_ACCOUNT_JSON) console.error('  - GOOGLE_SERVICE_ACCOUNT_JSON 未設置');
   if (!CALENDAR_ID) console.error('  - CALENDAR_ID 未設置');
+  if (!SPREADSHEET_ID) console.error('  - SPREADSHEET_ID 未設置');
 }
 
-// Google 日曆認證
+// Google API 認證（同時支援 Calendar 和 Sheets）
 let auth;
 try {
   const serviceAccount = JSON.parse(SERVICE_ACCOUNT_JSON);
   auth = new google.auth.GoogleAuth({
     credentials: serviceAccount,
-    scopes: ['https://www.googleapis.com/auth/calendar'],
+    scopes: [
+      'https://www.googleapis.com/auth/calendar',
+      'https://www.googleapis.com/auth/spreadsheets', // 新增 Sheets API 範圍
+    ],
   });
 } catch (error) {
   console.error('❌ 解析 Service Account JSON 失敗:', error.message);
 }
 
 const calendar = auth ? google.calendar({ version: 'v3', auth }) : null;
+const sheets = auth ? google.sheets({ version: 'v4', auth }) : null;
 
 // 服務配置
 const SERVICES = {
   '全身按摩': { maxCapacity: 3, resource: 'body', duration: 60 },
   '半身按摩': { maxCapacity: 3, resource: 'body', duration: 30 },
   '腳底按摩': { maxCapacity: 2, resource: 'foot', duration: 40 },
-  '腳底+全身': { components: ['腳底按摩', '全身按摩'], duration: 100 }, // 分拆為腳底和全身
-  '腳底+半身': { components: ['腳底按摩', '半身按摩'], duration: 70 }, // 分拆為腳底和半身
+  '腳底+全身': { components: ['腳底按摩', '全身按摩'], duration: 100 },
+  '腳底+半身': { components: ['腳底按摩', '半身按摩'], duration: 70 },
 };
 
 // 資源容量
 const RESOURCE_CAPACITY = {
-  'body': 3, // 全身和半身共用
+  'body': 3,
   'foot': 2,
 };
 
@@ -66,14 +72,14 @@ const keepAlive = () => {
 };
 setInterval(keepAlive, 600000);
 
-// 檢查資源和師傅可用性
+// 檢查資源和師傅可用性（保持不變）
 async function checkAvailability(service, startTime, endTime, master) {
   const serviceConfig = SERVICES[service];
   if (!serviceConfig) {
     return { isAvailable: false, message: '無效的服務類型' };
   }
 
-  const components = serviceConfig.components || [service]; // 若為複合型則分拆，否則單一服務
+  const components = serviceConfig.components || [service];
   const eventsToCheck = [];
 
   try {
@@ -101,7 +107,6 @@ async function checkAvailability(service, startTime, endTime, master) {
       eventsToCheck.push(...serviceEvents);
     }
 
-    // 檢查師傅
     if (master) {
       const masterEvents = events.filter(event => event.extendedProperties?.private?.master === master);
       if (masterEvents.length > 0) {
@@ -116,16 +121,47 @@ async function checkAvailability(service, startTime, endTime, master) {
   }
 }
 
+// 寫入試算表函數
+async function appendToSpreadsheet({ name, phone, service, duration, appointmentTime, master }) {
+  try {
+    const date = moment(appointmentTime).tz('Asia/Taipei').format('YYYY-MM-DD');
+    const time = moment(appointmentTime).tz('Asia/Taipei').format('HH:mm');
+    
+    const values = [
+      [
+        date,        // 日期
+        name,        // 姓名
+        phone,       // 電話
+        service,     // 服務項目
+        duration,    // 時長
+        time,        // 預約時間
+        master || '', // 師傅（若無則空）
+      ],
+    ];
+
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SPREADSHEET_ID,
+      range: 'Sheet1!A:G', // 假設使用 Sheet1，調整為你的工作表名稱
+      valueInputOption: 'RAW',
+      insertDataOption: 'INSERT_ROWS',
+      resource: { values },
+    });
+
+    console.log(`✅ 預約資料已写入試算表: ${name}`);
+  } catch (error) {
+    console.error('❌ 寫入試算表失敗:', error.message);
+  }
+}
+
 // 預約 API
 server.post('/booking', async (req, res) => {
-  if (!calendar) {
-    return res.status(500).send({ success: false, message: '伺服器配置錯誤，無法連接到 Google 日曆' });
+  if (!calendar || !sheets) {
+    return res.status(500).send({ success: false, message: '伺服器配置錯誤，無法連接到 Google 服務' });
   }
 
   try {
     const { name, phone, service, duration: requestedDuration, appointmentTime, master } = req.body;
 
-    // 驗證輸入
     if (!name || !phone || !service || !appointmentTime) {
       return res.status(400).send({ success: false, message: '缺少必要的欄位' });
     }
@@ -138,17 +174,15 @@ server.post('/booking', async (req, res) => {
 
     const serviceConfig = SERVICES[service];
     const components = serviceConfig.components || [service];
-    const totalDuration = requestedDuration || serviceConfig.duration; // 使用請求提供的時長或預設時長
+    const totalDuration = requestedDuration || serviceConfig.duration;
     const startTime = moment.tz(appointmentTime, 'Asia/Taipei');
     const endTime = startTime.clone().add(totalDuration, 'minutes');
 
-    // 檢查可用性
     const availability = await checkAvailability(service, startTime.toISOString(), endTime.toISOString(), master);
     if (!availability.isAvailable) {
       return res.status(409).send({ success: false, message: availability.message });
     }
 
-    // 分拆事件
     const events = [];
     let currentTime = startTime.clone();
     for (const comp of components) {
@@ -164,7 +198,6 @@ server.post('/booking', async (req, res) => {
       currentTime.add(compDuration, 'minutes');
     }
 
-    // 插入事件
     const eventIds = [];
     for (const event of events) {
       const response = await calendar.events.insert({
@@ -173,6 +206,16 @@ server.post('/booking', async (req, res) => {
       });
       eventIds.push(response.data.id);
     }
+
+    // 將預約資訊寫入試算表
+    await appendToSpreadsheet({
+      name,
+      phone,
+      service,
+      duration: totalDuration,
+      appointmentTime,
+      master,
+    });
 
     res.status(200).send({ success: true, message: '預約成功！', eventIds });
   } catch (error) {
