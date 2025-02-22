@@ -7,7 +7,7 @@ const fetch = require('node-fetch');
 require('dotenv').config();
 
 const server = express();
-server.use(cors({ origin: 'https://comforting-tiramisu-de23a2.netlify.app' }));
+server.use(cors({ origin: 'https://elaborate-wisp-d9529c.netlify.app' }));
 server.use(bodyParser.json());
 
 // 環境變數設置
@@ -245,7 +245,8 @@ server.post('/booking', async (req, res) => {
     }
 
     const serviceConfig = SERVICES[service];
-    const totalDuration = requestedDuration || serviceConfig.duration;
+    const components = serviceConfig.components || [service];
+    const totalDuration = requestedDuration || serviceConfig.duration; // 優先使用前端提交的 duration
     const startTime = moment.tz(appointmentTime, 'Asia/Taipei');
     const endTime = startTime.clone().add(totalDuration, 'minutes');
 
@@ -270,12 +271,15 @@ server.post('/booking', async (req, res) => {
 
     const events = [];
     let currentTime = startTime.clone();
-    const components = serviceConfig.components || [service];
     for (const comp of components) {
-      const compDuration = SERVICES[comp].duration;
+      // 如果是複合服務，使用 totalDuration 平均分配
+      const compDuration = service === '腳底+全身' || service === '腳底+半身' 
+        ? Math.floor(totalDuration / components.length)
+        : SERVICES[comp].duration;
+
       const event = {
         summary: `${comp} 預約：${name}`,
-        description: `電話：${phone}${master ? `\n師傅：${master}` : ''}\n原始服務：${service}`,
+        description: `電話：${phone}${master ? `\n師傅：${master}` : ''}\n原始服務：${service}\n總時長：${totalDuration} 分鐘`,
         start: { dateTime: currentTime.toISOString(), timeZone: 'Asia/Taipei' },
         end: { dateTime: currentTime.clone().add(compDuration, 'minutes').toISOString(), timeZone: 'Asia/Taipei' },
         extendedProperties: master ? { private: { master } } : undefined,
