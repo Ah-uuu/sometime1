@@ -119,6 +119,51 @@ const BUSINESS_HOURS = {
   0: { start: 13, end: 23 }, // 週日
 };
 
+// 顏色名稱到 colorId 的映射
+const COLOR_MAP = {
+  '羅勒綠': '6',
+  '葡萄紫': '10',
+  '橘橙色': '3',
+  '石墨黑': '11',
+  '孔雀藍': '7',
+  '藍莓色': '8',
+  '香蕉黃': '4',
+};
+
+// 從環境變數讀取師傅與顏色的映射（支援 JSON 格式）
+const MASTER_COLORS_ENV = process.env.MASTER_COLORS;
+let MASTER_COLORS = {};
+
+try {
+  // 嘗試解析環境變數中的 JSON 字符串
+  if (MASTER_COLORS_ENV) {
+    MASTER_COLORS = JSON.parse(MASTER_COLORS_ENV);
+  } else {
+    // 預設值（根據你的對應關係）
+    MASTER_COLORS = {
+      '阿U 1號': COLOR_MAP['羅勒綠'],    // 6
+      '小周 2號': COLOR_MAP['葡萄紫'],    // 10
+      'Alan 7號': COLOR_MAP['橘橙色'],    // 3
+      'Vincent 8號': COLOR_MAP['石墨黑'],  // 11
+      '魚丸 12號': COLOR_MAP['孔雀藍'],    // 7
+      '小力 30號': COLOR_MAP['藍莓色'],    // 8
+      '': COLOR_MAP['香蕉黃'],            // 不指定，使用香蕉黃 (4)
+    };
+  }
+} catch (error) {
+  console.error('❌ 解析 MASTER_COLORS 環境變數失敗:', error.message);
+  // 回退到預設值
+  MASTER_COLORS = {
+    '阿U 1號': '6',
+    '小周 2號': '10',
+    'Alan 7號': '3',
+    'Vincent 8號': '11',
+    '魚丸 12號': '7',
+    '小力 30號': '8',
+    '': '4', // 不指定
+  };
+}
+
 // 健康檢查 API
 server.get('/health', (req, res) => {
   const source = req.headers['user-agent'] || '未知來源';
@@ -336,12 +381,21 @@ server.post('/booking', async (req, res) => {
         ? (comp === '腳底按摩' ? 40 : duration - 40) // 腳底固定 40 分鐘，其餘分配
         : SERVICES[comp].duration; // 單一服務用固定時長
 
+      // 根據師傅設置顏色（若有指定師傅）
+      let colorId = undefined;
+      if (master && MASTER_COLORS[master]) {
+        colorId = MASTER_COLORS[master]; // 使用師傅對應的顏色
+      } else if (!master) { // 不指定師傅，使用預設顏色（香蕉黃）
+        colorId = MASTER_COLORS[''];
+      }
+
       const event = {
         summary: `${comp} 預約：${name}`,
         description: `電話：${phone}${master ? `\n師傅：${master}` : ''}\n原始服務：${service}\n總時長：${duration} 分鐘`,
         start: { dateTime: currentTime.toISOString(), timeZone: 'Asia/Taipei' },
         end: { dateTime: currentTime.clone().add(compDuration, 'minutes').toISOString(), timeZone: 'Asia/Taipei' },
         extendedProperties: master ? { private: { master } } : undefined,
+        colorId: colorId, // 添加顏色 ID（若有指定師傅或不指定）
       };
       events.push(event);
       currentTime.add(compDuration, 'minutes');
