@@ -245,8 +245,7 @@ server.post('/booking', async (req, res) => {
     }
 
     const serviceConfig = SERVICES[service];
-    const components = serviceConfig.components || [service];
-    const totalDuration = requestedDuration || serviceConfig.duration; // 優先使用前端提交的 duration
+    const totalDuration = requestedDuration || serviceConfig.duration;
     const startTime = moment.tz(appointmentTime, 'Asia/Taipei');
     const endTime = startTime.clone().add(totalDuration, 'minutes');
 
@@ -271,15 +270,12 @@ server.post('/booking', async (req, res) => {
 
     const events = [];
     let currentTime = startTime.clone();
+    const components = serviceConfig.components || [service];
     for (const comp of components) {
-      // 如果是複合服務，使用 totalDuration 平均分配
-      const compDuration = service === '腳底+全身' || service === '腳底+半身' 
-        ? Math.floor(totalDuration / components.length)
-        : SERVICES[comp].duration;
-
+      const compDuration = SERVICES[comp].duration;
       const event = {
         summary: `${comp} 預約：${name}`,
-        description: `電話：${phone}${master ? `\n師傅：${master}` : ''}\n原始服務：${service}\n總時長：${totalDuration} 分鐘`,
+        description: `電話：${phone}${master ? `\n師傅：${master}` : ''}\n原始服務：${service}`,
         start: { dateTime: currentTime.toISOString(), timeZone: 'Asia/Taipei' },
         end: { dateTime: currentTime.clone().add(compDuration, 'minutes').toISOString(), timeZone: 'Asia/Taipei' },
         extendedProperties: master ? { private: { master } } : undefined,
