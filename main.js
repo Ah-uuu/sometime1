@@ -40,33 +40,64 @@ try {
 const calendar = auth ? google.calendar({ version: 'v3', auth }) : null;
 const sheets = auth ? google.sheets({ version: 'v4', auth }) : null;
 
-// 服務配置（含時長嵌入名稱）
+// 服務配置（使用完整的 service 格式）
 const SERVICES = {
-  '半身按摩': {
+  '半身按摩_30': {
     maxCapacity: 3,
     resource: 'body',
-    duration: { '30': 30, '60': 60 },
+    duration: 30,
   },
-  '全身按摩': {
+  '半身按摩_60': {
     maxCapacity: 3,
     resource: 'body',
-    duration: { '60': 60, '90': 90, '120': 120, '150': 150 },
+    duration: 60,
   },
-  '腳底按摩': {
+  '全身按摩_60': {
+    maxCapacity: 3,
+    resource: 'body',
+    duration: 60,
+  },
+  '全身按摩_90': {
+    maxCapacity: 3,
+    resource: 'body',
+    duration: 90,
+  },
+  '全身按摩_120': {
+    maxCapacity: 3,
+    resource: 'body',
+    duration: 120,
+  },
+  '全身按摩_150': {
+    maxCapacity: 3,
+    resource: 'body',
+    duration: 150,
+  },
+  '腳底按摩_40': {
     maxCapacity: 2,
     resource: 'foot',
-    duration: { '40': 40, '70': 70 },
+    duration: 40,
   },
-  '腳底+半身': {
-    maxCapacity: 2, // 場地限制以腳底為主
-    resource: ['foot', 'body'],
-    duration: { '70': 70 },
-    components: ['腳底按摩', '半身按摩'],
+  '腳底按摩_70': {
+    maxCapacity: 2,
+    resource: 'foot',
+    duration: 70,
   },
-  '腳底+全身': {
+  '腳底+半身_70': {
     maxCapacity: 2,
     resource: ['foot', 'body'],
-    duration: { '100': 100, '130': 130 },
+    duration: 70,
+    components: ['腳底按摩', '半身按摩'],
+  },
+  '腳底+全身_100': {
+    maxCapacity: 2,
+    resource: ['foot', 'body'],
+    duration: 100,
+    components: ['腳底按摩', '全身按摩'],
+  },
+  '腳底+全身_130': {
+    maxCapacity: 2,
+    resource: ['foot', 'body'],
+    duration: 130,
     components: ['腳底按摩', '全身按摩'],
   },
 };
@@ -179,13 +210,12 @@ async function checkAvailability(service, startTime, endTime, master) {
       for (const res of resource) {
         const maxCapacity = RESOURCE_CAPACITY[res];
         const serviceEvents = events.filter(event => {
-          const eventService = event.summary.split(' 預約：')[0]; // 直接使用完整 service
+          const eventService = event.summary.split(' 預約：')[0]; // 直接使用完整的 service
           return SERVICES[eventService]?.resource.includes(res);
         });
 
         if (serviceEvents.length >= maxCapacity) {
-          const durationKey = Object.keys(serviceConfig.duration)[0]; // 取第一個可用時長
-          const duration = serviceConfig.duration[durationKey];
+          const duration = serviceConfig.duration;
           const nextTime = await findNextAvailableTime(service, endTime, duration, master);
           return {
             isAvailable: false,
@@ -200,8 +230,7 @@ async function checkAvailability(service, startTime, endTime, master) {
     if (master) {
       const masterEvents = events.filter(event => event.extendedProperties?.private?.master === master);
       if (masterEvents.length > 0) {
-        const durationKey = Object.keys(serviceConfig.duration)[0];
-        const duration = serviceConfig.duration[durationKey];
+        const duration = serviceConfig.duration;
         const nextTime = await findNextAvailableTime(service, endTime, duration, master);
         return {
           isAvailable: false,
@@ -269,16 +298,13 @@ server.post('/booking', async (req, res) => {
       return res.status(400).send({ success: false, message: '時間格式錯誤' });
     }
 
-    // 直接使用完整的 service 格式（例如 "半身按摩_30"）
-    const serviceParts = service.split('_');
-    const serviceName = serviceParts[0];
-    const durationKey = serviceParts[1];
-    if (!SERVICES[serviceName] || !SERVICES[serviceName].duration[durationKey]) {
+    // 直接使用完整的 service 格式（例如 "半身按摩_30"）作為鍵
+    if (!SERVICES[service]) {
       return res.status(400).send({ success: false, message: '無效的服務類型或時長' });
     }
 
-    const serviceConfig = SERVICES[serviceName];
-    const duration = serviceConfig.duration[durationKey];
+    const serviceConfig = SERVICES[service];
+    const duration = serviceConfig.duration;
     const startTime = moment.tz(appointmentTime, 'Asia/Taipei');
     const endTime = startTime.clone().add(duration, 'minutes');
 
@@ -303,12 +329,12 @@ server.post('/booking', async (req, res) => {
 
     const events = [];
     let currentTime = startTime.clone();
-    const components = serviceConfig.components || [serviceName];
+    const components = serviceConfig.components || [service];
     for (const comp of components) {
       // 處理複合服務時長：腳底固定 40 分鐘，其餘分配
-      const compDuration = serviceName.includes('+') 
+      const compDuration = service.includes('+') 
         ? (comp === '腳底按摩' ? 40 : duration - 40) // 腳底固定 40 分鐘，其餘分配
-        : SERVICES[comp].duration[Object.keys(SERVICES[comp].duration)[0]]; // 單一服務用固定時長
+        : SERVICES[comp].duration; // 單一服務用固定時長
 
       const event = {
         summary: `${comp} 預約：${name}`,
@@ -331,6 +357,8 @@ server.post('/booking', async (req, res) => {
     }
 
     // 將預約資訊寫入試算表
+    const serviceParts = service.split('_');
+    const serviceName = serviceParts[0]; // 提取服務名稱
     await appendToSpreadsheet({
       name,
       phone,
