@@ -130,26 +130,26 @@ try {
   } else {
     // 預設值（根據你的對應關係與 Google Calendar 顏色順序）
     MASTER_COLORS = {
-      '阿U 1號': '6',    // 羅勒綠 → colorId: 6
-      '小周 2號': '10',   // 葡萄紫 → colorId: 10
-      'Alan 7號': '3',    // 橘橙色 → colorId: 3
-      'Vincent 8號': '11', // 石墨黑 → colorId: 11
-      '魚丸 12號': '7',   // 孔雀藍 → colorId: 7
-      '小力 30號': '8',   // 藍莓色 → colorId: 8
-      '': '4',            // 不指定 → 香蕉黃 → colorId: 4
+      '阿U 1號': '10',    // 羅勒綠 → colorId: 10 (Basil)
+      '小周 2號': '3',     // 葡萄紫 → colorId: 3 (Grape)
+      'Alan 7號': '6',     // 橘橙色 → colorId: 6 (Tangerine)
+      'Vincent 8號': '8',  // 石墨黑 → colorId: 8 (Graphite)
+      '魚丸 12號': '7',    // 孔雀藍 → colorId: 7 (Peacock)
+      '小力 30號': '9',    // 藍莓色 → colorId: 9 (Blueberry)
+      '': '5',             // 不指定 → 香蕉黃 → colorId: 5 (Banana)
     };
   }
 } catch (error) {
   console.error('❌ 解析 MASTER_COLORS 環境變數失敗:', error.message);
   // 回退到預設值
   MASTER_COLORS = {
-    '阿U 1號': '6',
-    '小周 2號': '10',
-    'Alan 7號': '3',
-    'Vincent 8號': '11',
+    '阿U 1號': '10',
+    '小周 2號': '3',
+    'Alan 7號': '6',
+    'Vincent 8號': '8',
     '魚丸 12號': '7',
-    '小力 30號': '8',
-    '': '4', // 不指定
+    '小力 30號': '9',
+    '': '5', // 不指定
   };
 }
 
