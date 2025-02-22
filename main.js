@@ -119,17 +119,6 @@ const BUSINESS_HOURS = {
   0: { start: 13, end: 23 }, // 週日
 };
 
-// 顏色名稱到 colorId 的映射
-const COLOR_MAP = {
-  '羅勒綠': '6',
-  '葡萄紫': '10',
-  '橘橙色': '3',
-  '石墨黑': '11',
-  '孔雀藍': '7',
-  '藍莓色': '8',
-  '香蕉黃': '4',
-};
-
 // 從環境變數讀取師傅與顏色的映射（支援 JSON 格式）
 const MASTER_COLORS_ENV = process.env.MASTER_COLORS;
 let MASTER_COLORS = {};
@@ -139,15 +128,15 @@ try {
   if (MASTER_COLORS_ENV) {
     MASTER_COLORS = JSON.parse(MASTER_COLORS_ENV);
   } else {
-    // 預設值（根據你的對應關係）
+    // 預設值（根據你的對應關係與 Google Calendar 顏色順序）
     MASTER_COLORS = {
-      '阿U 1號': COLOR_MAP['羅勒綠'],    // 6
-      '小周 2號': COLOR_MAP['葡萄紫'],    // 10
-      'Alan 7號': COLOR_MAP['橘橙色'],    // 3
-      'Vincent 8號': COLOR_MAP['石墨黑'],  // 11
-      '魚丸 12號': COLOR_MAP['孔雀藍'],    // 7
-      '小力 30號': COLOR_MAP['藍莓色'],    // 8
-      '': COLOR_MAP['香蕉黃'],            // 不指定，使用香蕉黃 (4)
+      '阿U 1號': '6',    // 羅勒綠 → colorId: 6
+      '小周 2號': '10',   // 葡萄紫 → colorId: 10
+      'Alan 7號': '3',    // 橘橙色 → colorId: 3
+      'Vincent 8號': '11', // 石墨黑 → colorId: 11
+      '魚丸 12號': '7',   // 孔雀藍 → colorId: 7
+      '小力 30號': '8',   // 藍莓色 → colorId: 8
+      '': '4',            // 不指定 → 香蕉黃 → colorId: 4
     };
   }
 } catch (error) {
