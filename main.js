@@ -7,7 +7,7 @@ const fetch = require('node-fetch');
 require('dotenv').config();
 
 const server = express();
-server.use(cors({ origin: 'https://elaborate-pegasus-fea471.netlify.app' }));
+server.use(cors({ origin: 'https://incomparable-paprenjak-e619fe.netlify.app' }));
 server.use(bodyParser.json());
 
 // 環境變數設置
@@ -179,7 +179,7 @@ async function checkAvailability(service, startTime, endTime, master) {
       for (const res of resource) {
         const maxCapacity = RESOURCE_CAPACITY[res];
         const serviceEvents = events.filter(event => {
-          const eventService = event.summary.split(' 預約：')[0].split('_')[0]; // 只取服務名稱
+          const eventService = event.summary.split(' 預約：')[0]; // 直接使用完整 service
           return SERVICES[eventService]?.resource.includes(res);
         });
 
@@ -269,7 +269,7 @@ server.post('/booking', async (req, res) => {
       return res.status(400).send({ success: false, message: '時間格式錯誤' });
     }
 
-    // 從服務名稱中提取服務和時長
+    // 直接使用完整的 service 格式（例如 "半身按摩_30"）
     const serviceParts = service.split('_');
     const serviceName = serviceParts[0];
     const durationKey = serviceParts[1];
@@ -292,7 +292,7 @@ server.post('/booking', async (req, res) => {
       });
     }
 
-    const availability = await checkAvailability(serviceName, startTime.toISOString(), endTime.toISOString(), master);
+    const availability = await checkAvailability(service, startTime.toISOString(), endTime.toISOString(), master);
     if (!availability.isAvailable) {
       return res.status(409).send({ 
         success: false, 
@@ -312,7 +312,7 @@ server.post('/booking', async (req, res) => {
 
       const event = {
         summary: `${comp} 預約：${name}`,
-        description: `電話：${phone}${master ? `\n師傅：${master}` : ''}\n原始服務：${serviceName}\n總時長：${duration} 分鐘`,
+        description: `電話：${phone}${master ? `\n師傅：${master}` : ''}\n原始服務：${service}\n總時長：${duration} 分鐘`,
         start: { dateTime: currentTime.toISOString(), timeZone: 'Asia/Taipei' },
         end: { dateTime: currentTime.clone().add(compDuration, 'minutes').toISOString(), timeZone: 'Asia/Taipei' },
         extendedProperties: master ? { private: { master } } : undefined,
