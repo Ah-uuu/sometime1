@@ -108,18 +108,7 @@ const RESOURCE_CAPACITY = {
   'foot': 2,
 };
 
-// 營業時間
-const BUSINESS_HOURS = {
-  1: { start: 12, end: 22 }, // 週一 (12:00~22:00)
-  2: { start: 12, end: 22 }, // 週二
-  3: { start: 12, end: 22 }, // 週三
-  4: { start: 12, end: 22 }, // 週四
-  5: { start: 13, end: 23 }, // 週五 (13:00~23:00)
-  6: { start: 13, end: 23 }, // 週六
-  0: { start: 13, end: 23 }, // 週日
-};
-
-// 從環境變數讀取師傅與顏色的映射（支援 JSON 格式）
+// 師傅與顏色的映射（colorId 範圍 1~11）
 const MASTER_COLORS_ENV = process.env.MASTER_COLORS;
 let MASTER_COLORS = {};
 
@@ -152,6 +141,17 @@ try {
     '': '5', // 不指定
   };
 }
+
+// 營業時間
+const BUSINESS_HOURS = {
+  1: { start: 12, end: 22 }, // 週一 (12:00~22:00)
+  2: { start: 12, end: 22 }, // 週二
+  3: { start: 12, end: 22 }, // 週三
+  4: { start: 12, end: 22 }, // 週四
+  5: { start: 13, end: 23 }, // 週五 (13:00~23:00)
+  6: { start: 13, end: 23 }, // 週六
+  0: { start: 13, end: 23 }, // 週日
+};
 
 // 健康檢查 API
 server.get('/health', (req, res) => {
@@ -281,12 +281,51 @@ async function checkAvailability(service, startTime, endTime, master) {
   }
 }
 
-// 寫入試算表函數
+// 寫入試算表函數（按日期分頁）
 async function appendToSpreadsheet({ name, phone, service, duration, appointmentTime, master }) {
   try {
     const date = moment(appointmentTime).tz('Asia/Taipei').format('YYYY-MM-DD');
     const time = moment(appointmentTime).tz('Asia/Taipei').format('HH:mm');
     
+    // 構建目標工作表名稱（例如 "2025-02-23"）
+    const sheetName = date;
+    
+    // 檢查工作表是否存在，若不存在則創建
+    let sheetsResponse;
+    try {
+      sheetsResponse = await sheets.spreadsheets.get({
+        spreadsheetId: SPREADSHEET_ID,
+      });
+    } catch (error) {
+      console.error('❌ 獲取試算表資訊失敗:', error.message);
+      throw error;
+    }
+
+    const sheetExists = sheetsResponse.data.sheets.some(sheet => sheet.properties.title === sheetName);
+    if (!sheetExists) {
+      // 創建新工作表
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId: SPREADSHEET_ID,
+        resource: {
+          requests: [
+            {
+              addSheet: {
+                properties: {
+                  title: sheetName,
+                  gridProperties: {
+                    rowCount: 100, // 設置初始行數
+                    columnCount: 10, // 設置初始列數（對應 A:J）
+                  },
+                },
+              },
+            },
+          ],
+        },
+      });
+      console.log(`✅ 為日期 ${sheetName} 創建新工作表`);
+    }
+
+    // 寫入數據到對應的工作表
     const values = [
       [
         date,        // A: 日期
@@ -304,15 +343,16 @@ async function appendToSpreadsheet({ name, phone, service, duration, appointment
 
     await sheets.spreadsheets.values.append({
       spreadsheetId: SPREADSHEET_ID,
-      range: 'Sheet1!A:J',
+      range: `${sheetName}!A:J`, // 寫入對應日期的工作表
       valueInputOption: 'RAW',
       insertDataOption: 'INSERT_ROWS',
       resource: { values },
     });
 
-    console.log(`✅ 預約資料已写入試算表: ${name}`);
+    console.log(`✅ 預約資料已写入試算表日期分頁 ${sheetName}: ${name}`);
   } catch (error) {
     console.error('❌ 寫入試算表失敗:', error.message);
+    throw error;
   }
 }
 
@@ -399,13 +439,11 @@ server.post('/booking', async (req, res) => {
       eventIds.push(response.data.id);
     }
 
-    // 將預約資訊寫入試算表
-    const serviceParts = service.split('_');
-    const serviceName = serviceParts[0]; // 提取服務名稱
+    // 將預約資訊寫入試算表（按日期分頁）
     await appendToSpreadsheet({
       name,
       phone,
-      service: serviceName, // 只寫入服務名稱
+      service: service.split('_')[0], // 只寫入服務名稱
       duration,
       appointmentTime: startTime.toISOString(),
       master,
