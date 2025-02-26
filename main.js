@@ -186,7 +186,7 @@ function checkBusinessHours(appointmentTime, duration) {
   return { isValid: true };
 }
 
-// 查找下一個可用時段
+// 查找下一個可用時段（優化為優先床位，後檢查師傅）
 async function findNextAvailableTime(service, startTime, duration, master) {
   const serviceConfig = SERVICES[service];
   if (!serviceConfig) return null;
@@ -202,23 +202,86 @@ async function findNextAvailableTime(service, startTime, duration, master) {
     // 檢查營業時間
     const businessCheck = checkBusinessHours(checkStart, duration);
     if (!businessCheck.isValid) {
-      currentTime.add(15, 'minutes'); // 跳過非營業時間
+      currentTime.add(5, 'minutes'); // 縮短檢查間隔為 5 分鐘，提高精確度
       continue;
     }
 
-    // 檢查可用性
-    const availability = await checkAvailability(service, checkStart, checkEnd, master);
-    if (availability.isAvailable) {
-      return checkStart;
+    // 首先檢查床位的可用性（忽略師傅）
+    const resourceAvailability = await checkResourceAvailability(service, checkStart, checkEnd);
+    if (resourceAvailability.isAvailable) {
+      // 然後檢查師傅的可用性
+      const therapistAvailability = master ? await checkTherapistAvailability(master, checkStart, checkEnd) : { isAvailable: true };
+      if (therapistAvailability.isAvailable) {
+        return checkStart;
+      }
     }
 
-    currentTime.add(15, 'minutes'); // 每 15 分鐘檢查一次
+    currentTime.add(5, 'minutes'); // 每 5 分鐘檢查一次
   }
 
   return null; // 24 小時內無可用時段
 }
 
-// 檢查資源和師傅可用性
+// 檢查資源（床位）可用性
+async function checkResourceAvailability(service, startTime, endTime) {
+  const serviceConfig = SERVICES[service];
+  const components = serviceConfig.components || [service];
+
+  try {
+    const response = await calendar.events.list({
+      calendarId: CALENDAR_ID,
+      timeMin: startTime,
+      timeMax: endTime,
+      singleEvents: true,
+      orderBy: 'startTime',
+    });
+
+    const events = response.data.items || [];
+
+    for (const comp of components) {
+      const resource = Array.isArray(SERVICES[comp].resource) ? SERVICES[comp].resource : [SERVICES[comp].resource];
+      for (const res of resource) {
+        const maxCapacity = RESOURCE_CAPACITY[res];
+        const serviceEvents = events.filter(event => {
+          const eventService = event.summary.split(' 預約：')[0];
+          return SERVICES[eventService]?.resource.includes(res);
+        });
+
+        if (serviceEvents.length >= maxCapacity) {
+          return { isAvailable: false };
+        }
+      }
+    }
+
+    return { isAvailable: true };
+  } catch (error) {
+    console.error('❌ 檢查資源可用性失敗:', error.message);
+    throw error;
+  }
+}
+
+// 檢查師傅可用性
+async function checkTherapistAvailability(master, startTime, endTime) {
+  try {
+    const response = await calendar.events.list({
+      calendarId: CALENDAR_ID,
+      timeMin: startTime,
+      timeMax: endTime,
+      singleEvents: true,
+      orderBy: 'startTime',
+    });
+
+    const events = response.data.items || [];
+    const masterEvents = events.filter(event => event.extendedProperties?.private?.master === master);
+
+    return { isAvailable: masterEvents.length === 0 };
+  } catch (error) {
+    console.error('❌ 檢查師傅可用性失敗:', error.message);
+    throw error;
+  }
+}
+
+// 檢查資源和師傅可用性（分離檢查）
 async function checkAvailability(service, startTime, endTime, master) {
   const serviceConfig = SERVICES[service];
   if (!serviceConfig) {
@@ -239,18 +302,18 @@ async function checkAvailability(service, startTime, endTime, master) {
 
     const events = response.data.items || [];
 
+    // 檢查資源（床位）可用性
     for (const comp of components) {
       const resource = Array.isArray(serviceConfig.resource) ? serviceConfig.resource : [serviceConfig.resource];
       for (const res of resource) {
         const maxCapacity = RESOURCE_CAPACITY[res];
         const serviceEvents = events.filter(event => {
-          const eventService = event.summary.split(' 預約：')[0]; // 直接使用完整的 service
+          const eventService = event.summary.split(' 預約：')[0];
           return SERVICES[eventService]?.resource.includes(res);
         });
 
         if (serviceEvents.length >= maxCapacity) {
-          const duration = serviceConfig.duration;
-          const nextTime = await findNextAvailableTime(service, endTime, duration, master);
+          const nextTime = await findNextAvailableTime(service, endTime, serviceConfig.duration, master);
           return {
             isAvailable: false,
             message: `${comp} 在該時段已達最大容客量 (${maxCapacity} 人)`,
@@ -261,11 +324,11 @@ async function checkAvailability(service, startTime, endTime, master) {
       }
     }
 
+    // 檢查師傅可用性（獨立處理）
     if (master) {
       const masterEvents = events.filter(event => event.extendedProperties?.private?.master === master);
       if (masterEvents.length > 0) {
-        const duration = serviceConfig.duration;
-        const nextTime = await findNextAvailableTime(service, endTime, duration, master);
+        const nextTime = await findNextAvailableTime(service, endTime, serviceConfig.duration, master);
         return {
           isAvailable: false,
           message: `師傅 ${master} 在該時段已有預約`,
