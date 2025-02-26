@@ -185,13 +185,13 @@ function checkBusinessHours(appointmentTime, duration) {
   return { isValid: true };
 }
 
-// 查找當天最快可用時段（僅檢查場地，忽略師傅）
-async function findNextAvailableTime(service) {
+// 查找指定日期的最快可用時段（僅檢查場地，忽略師傅）
+async function findNextAvailableTime(service, targetDate) {
   const serviceConfig = SERVICES[service];
   if (!serviceConfig) return null;
 
-  const today = moment.tz('Asia/Taipei').startOf('day');
-  const searchEnd = moment.tz(today).endOf('day'); // 當天結束時間
+  const today = targetDate.clone().startOf('day');
+  const searchEnd = targetDate.clone().endOf('day'); // 當天結束時間
   const components = serviceConfig.components || [service];
 
   let currentTime = today.clone();
@@ -369,12 +369,16 @@ async function checkAvailability(service, startTime, endTime, master) {
 // 新增 API：查詢當天最快可預約時段
 server.get('/available-times', async (req, res) => {
   try {
-    const { service } = req.query;
+    const { service, date } = req.query;
     if (!service || !SERVICES[service]) {
       return res.status(400).send({ success: false, message: '無效的服務類型' });
     }
+    const targetDate = date ? moment.tz(date, 'Asia/Taipei') : moment.tz('Asia/Taipei');
+    if (!targetDate.isValid()) {
+      return res.status(400).send({ success: false, message: '無效的日期格式' });
+    }
 
-    const nextAvailableTime = await findNextAvailableTime(service);
+    const nextAvailableTime = await findNextAvailableTime(service, targetDate);
     if (nextAvailableTime) {
       res.status(200).send({
         success: true,
