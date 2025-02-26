@@ -185,21 +185,22 @@ function checkBusinessHours(appointmentTime, duration) {
   return { isValid: true };
 }
 
-// 查找下一個可用時段（僅檢查場地，精確到 1 分鐘，處理結束時間）
-async function findNextAvailableTime(service, startTime, duration, master) {
+// 查找當天最快可用時段（僅檢查場地，忽略師傅）
+async function findNextAvailableTime(service) {
   const serviceConfig = SERVICES[service];
   if (!serviceConfig) return null;
 
+  const today = moment.tz('Asia/Taipei').startOf('day');
+  const searchEnd = moment.tz(today).endOf('day'); // 當天結束時間
   const components = serviceConfig.components || [service];
-  const searchEnd = moment.tz(startTime, 'Asia/Taipei').add(24, 'hours'); // 查找未來 24 小時
 
-  let currentTime = moment.tz(startTime, 'Asia/Taipei');
+  let currentTime = today.clone();
   while (currentTime.isBefore(searchEnd)) {
     const checkStart = currentTime.clone().toISOString();
-    const checkEnd = currentTime.clone().add(duration, 'minutes').toISOString();
+    const checkEnd = currentTime.clone().add(serviceConfig.duration, 'minutes').toISOString();
 
     // 檢查營業時間
-    const businessCheck = checkBusinessHours(checkStart, duration);
+    const businessCheck = checkBusinessHours(checkStart, serviceConfig.duration);
     if (!businessCheck.isValid) {
       currentTime.add(1, 'minutes'); // 檢查間隔為 1 分鐘
       continue;
@@ -214,7 +215,7 @@ async function findNextAvailableTime(service, startTime, duration, master) {
     currentTime.add(1, 'minutes'); // 每 1 分鐘檢查一次
   }
 
-  return null; // 24 小時內無可用時段
+  return null; // 當天無可用時段
 }
 
 // 檢查資源（床位/腳位）可用性（精確處理結束時間）
@@ -244,15 +245,19 @@ async function checkResourceAvailability(service, startTime, endTime) {
           return eventResource.includes(res);
         });
 
-        // 檢查事件是否完全覆蓋目標時段
+        // 檢查事件是否完全覆蓋目標時段，但允許結束時間後立即預約
         const overlappingEvents = serviceEvents.filter(event => {
           const eventStart = moment.tz(event.start.dateTime || event.start.date, 'Asia/Taipei');
           const eventEnd = moment.tz(event.end.dateTime || event.end.date, 'Asia/Taipei');
           const checkStartMoment = moment.tz(startTime, 'Asia/Taipei');
           const checkEndMoment = moment.tz(endTime, 'Asia/Taipei');
 
-          return eventStart.isBefore(checkEndMoment) && eventEnd.isAfter(checkStartMoment);
+          // 僅當事件完全覆蓋檢查時間範圍時視為衝突
+          return eventStart.isBefore(checkEndMoment) && eventEnd.isAfter(checkStartMoment) &&
+                 !(eventEnd.isSameOrBefore(checkStartMoment)); // 確保結束時間不早於檢查開始時間
         });
+
+        console.log(`Resource ${res}, Checking time ${moment.tz(startTime, 'Asia/Taipei').format('YYYY-MM-DD HH:mm:ss')} to ${moment.tz(endTime, 'Asia/Taipei').format('YYYY-MM-DD HH:mm:ss')}, Overlapping events:`, overlappingEvents);
 
         if (overlappingEvents.length >= maxCapacity) {
           return { isAvailable: false };
@@ -267,7 +272,7 @@ async function checkResourceAvailability(service, startTime, endTime) {
   }
 }
 
-// 檢查師傅可用性（僅用於提示，不影響場地預約）
+// 檢查師傅可用性（僅用於提示）
 async function checkTherapistAvailability(master, startTime, endTime) {
   try {
     const response = await calendar.events.list({
@@ -288,7 +293,7 @@ async function checkTherapistAvailability(master, startTime, endTime) {
   }
 }
 
-// 檢查可用性（優先場地，提示師傅衝突）
+// 檢查預約時段（僅檢查場地和師傅限制，不回傳時間）
 async function checkAvailability(service, startTime, endTime, master) {
   const serviceConfig = SERVICES[service];
   if (!serviceConfig) {
@@ -308,7 +313,7 @@ async function checkAvailability(service, startTime, endTime, master) {
 
     const events = response.data.items || [];
 
-    // 僅檢查場地（資源）可用性
+    // 檢查場地（資源）可用性
     for (const comp of components) {
       const resource = Array.isArray(serviceConfig.resource) ? serviceConfig.resource : [serviceConfig.resource];
       for (const res of resource) {
@@ -326,22 +331,17 @@ async function checkAvailability(service, startTime, endTime, master) {
           const checkStartMoment = moment.tz(startTime, 'Asia/Taipei');
           const checkEndMoment = moment.tz(endTime, 'Asia/Taipei');
 
-          return eventStart.isBefore(checkEndMoment) && eventEnd.isAfter(checkStartMoment);
+          // 僅當事件完全覆蓋檢查時間範圍時視為衝突
+          return eventStart.isBefore(checkEndMoment) && eventEnd.isAfter(checkStartMoment) &&
+                 !(eventEnd.isSameOrBefore(checkStartMoment)); // 確保結束時間不早於檢查開始時間
         });
 
         if (overlappingEvents.length >= maxCapacity) {
-          const nextTime = await findNextAvailableTime(service, endTime, serviceConfig.duration, null); // 忽略師傅，查找最快場地
           let message = `${comp} 在該時段已達最大容客量 (${maxCapacity} 人)`;
-          if (master) {
-            const therapistAvailability = await checkTherapistAvailability(master, startTime, endTime);
-            if (!therapistAvailability.isAvailable) {
-              message += `，師傅 ${master} 不可用`;
-            }
-          }
           return {
             isAvailable: false,
-            message: message,
-            nextAvailableTime: nextTime ? moment.tz(nextTime, 'Asia/Taipei').format('YYYY-MM-DD HH:mm:ss') : null, // 增加秒數精確度
+            message: message + '，請點擊「今日可預約時段」查看可用時間',
+            nextAvailableTime: null,
           };
         }
       }
@@ -351,11 +351,10 @@ async function checkAvailability(service, startTime, endTime, master) {
     if (master) {
       const therapistAvailability = await checkTherapistAvailability(master, startTime, endTime);
       if (!therapistAvailability.isAvailable) {
-        const nextTime = await findNextAvailableTime(service, endTime, serviceConfig.duration, null); // 忽略師傅，查找最快場地
         return {
-          isAvailable: true, // 場地可用，忽略師傅衝突
-          message: `床位可用，但師傅 ${master} 在該時段已有預約`,
-          nextAvailableTime: nextTime ? moment.tz(nextTime, 'Asia/Taipei').format('YYYY-MM-DD HH:mm:ss') : null,
+          isAvailable: false,
+          message: `師傅 ${master} 在該時段已有預約，請點擊「今日可預約時段」查看可用時間`,
+          nextAvailableTime: null,
         };
       }
     }
@@ -366,6 +365,29 @@ async function checkAvailability(service, startTime, endTime, master) {
     throw error;
   }
 }
+
+// 新增 API：查詢當天最快可預約時段
+server.get('/available-times', async (req, res) => {
+  try {
+    const { service } = req.query;
+    if (!service || !SERVICES[service]) {
+      return res.status(400).send({ success: false, message: '無效的服務類型' });
+    }
+
+    const nextAvailableTime = await findNextAvailableTime(service);
+    if (nextAvailableTime) {
+      res.status(200).send({
+        success: true,
+        nextAvailableTime: moment.tz(nextAvailableTime, 'Asia/Taipei').format('YYYY-MM-DD HH:mm:ss'),
+      });
+    } else {
+      res.status(200).send({ success: false, message: '當天無可用時段' });
+    }
+  } catch (error) {
+    console.error('❌ 查詢可用時段失敗:', error.message);
+    res.status(500).send({ success: false, message: `查詢可用時段失敗，請稍後再試！ 錯誤詳情: ${error.message}` });
+  }
+});
 
 // 寫入試算表函數（按日期分頁）
 async function appendToSpreadsheet({ name, phone, service, duration, appointmentTime, master }) {
@@ -442,7 +464,7 @@ async function appendToSpreadsheet({ name, phone, service, duration, appointment
   }
 }
 
-// 預約 API
+// 預約 API（僅檢查場地和師傅限制）
 server.post('/booking', async (req, res) => {
   if (!calendar || !sheets) {
     return res.status(500).send({ success: false, message: '伺服器配置錯誤，無法連接到 Google 服務' });
@@ -465,30 +487,30 @@ server.post('/booking', async (req, res) => {
 
     const serviceConfig = SERVICES[service];
     const duration = serviceConfig.duration;
-    const startTime = moment.tz(appointmentTime, 'Asia/Taipei');
-    const endTime = startTime.clone().add(duration, 'minutes');
+    const startTime = moment.tz(appointmentTime, 'Asia/Taipei').toISOString();
+    const endTime = moment.tz(appointmentTime, 'Asia/Taipei').add(duration, 'minutes').toISOString();
 
     // 檢查營業時間
-    const businessCheck = checkBusinessHours(startTime.toISOString(), duration);
+    const businessCheck = checkBusinessHours(startTime, duration);
     if (!businessCheck.isValid) {
       return res.status(400).send({ 
         success: false, 
-        message: businessCheck.message,
+        message: businessCheck.message + '，請點擊「今日可預約時段」查看可用時間',
         nextAvailableTime: null, 
       });
     }
 
-    const availability = await checkAvailability(service, startTime.toISOString(), endTime.toISOString(), master);
+    const availability = await checkAvailability(service, startTime, endTime, master);
     if (!availability.isAvailable) {
       return res.status(409).send({ 
         success: false, 
         message: availability.message,
-        nextAvailableTime: availability.nextAvailableTime,
+        nextAvailableTime: null, 
       });
     }
 
     const events = [];
-    let currentTime = startTime.clone();
+    let currentTime = moment.tz(appointmentTime, 'Asia/Taipei');
     const components = serviceConfig.components || [service];
     for (const comp of components) {
       // 處理複合服務時長：腳底固定 40 分鐘，其餘分配
@@ -531,7 +553,7 @@ server.post('/booking', async (req, res) => {
       phone,
       service: service.split('_')[0], // 只寫入服務名稱
       duration,
-      appointmentTime: startTime.toISOString(),
+      appointmentTime: startTime,
       master,
     });
 
