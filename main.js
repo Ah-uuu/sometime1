@@ -20,6 +20,7 @@ if (!SERVICE_ACCOUNT_JSON || !CALENDAR_ID || !SPREADSHEET_ID) {
   if (!SERVICE_ACCOUNT_JSON) console.error('  - GOOGLE_SERVICE_ACCOUNT_JSON 未設置');
   if (!CALENDAR_ID) console.error('  - CALENDAR_ID 未設置');
   if (!SPREADSHEET_ID) console.error('  - SPREADSHEET_ID 未設置');
+  process.exit(1); // 終止程序，避免無效運行
 }
 
 // Google API 認證
@@ -35,10 +36,11 @@ try {
   });
 } catch (error) {
   console.error('❌ 解析 Service Account JSON 失敗:', error.message);
+  process.exit(1); // 終止程序，避免無效運行
 }
 
-const calendar = auth ? google.calendar({ version: 'v3', auth }) : null;
-const sheets = auth ? google.sheets({ version: 'v4', auth }) : null;
+const calendar = google.calendar({ version: 'v3', auth });
+const sheets = google.sheets({ version: 'v4', auth });
 
 // 服務配置（使用完整的 service 格式）
 const SERVICES = {
@@ -113,11 +115,9 @@ const MASTER_COLORS_ENV = process.env.MASTER_COLORS;
 let MASTER_COLORS = {};
 
 try {
-  // 嘗試解析環境變數中的 JSON 字符串
   if (MASTER_COLORS_ENV) {
     MASTER_COLORS = JSON.parse(MASTER_COLORS_ENV);
   } else {
-    // 預設值（根據你的對應關係與 Google Calendar 顏色順序）
     MASTER_COLORS = {
       '阿U 1號': '10',    // 羅勒綠 → colorId: 10 (Basil)
       '小周 2號': '3',     // 葡萄紫 → colorId: 3 (Grape)
@@ -130,7 +130,6 @@ try {
   }
 } catch (error) {
   console.error('❌ 解析 MASTER_COLORS 環境變數失敗:', error.message);
-  // 回退到預設值
   MASTER_COLORS = {
     '阿U 1號': '10',
     '小周 2號': '3',
@@ -268,12 +267,12 @@ async function checkResourceAvailability(service, startTime, endTime) {
   }
 }
 
-// 檢查師傅可用性（精確處理結束時間）
+// 檢查師傅可用性（精確處理結束時間，允許緊接結束後預約）
 async function checkTherapistAvailability(master, startTime, endTime) {
   try {
     const response = await calendar.events.list({
       calendarId: CALENDAR_ID,
-      timeMin: startTime,
+      timeMin: moment.tz(startTime, 'Asia/Taipei').subtract(1, 'minutes').toISOString(), // 檢查前 1 分鐘
       timeMax: endTime,
       singleEvents: true,
       orderBy: 'startTime',
@@ -284,11 +283,29 @@ async function checkTherapistAvailability(master, startTime, endTime) {
       if (!event.extendedProperties?.private?.master === master) return false;
       const eventStart = moment.tz(event.start.dateTime || event.start.date, 'Asia/Taipei');
       const eventEnd = moment.tz(event.end.dateTime || event.end.date, 'Asia/Taipei');
-      return eventEnd.isSameOrAfter(moment.tz(startTime, 'Asia/Taipei')) && eventStart.isSameOrBefore(moment.tz(endTime, 'Asia/Taipei'));
+      const checkStartMoment = moment.tz(startTime, 'Asia/Taipei');
+      const checkEndMoment = moment.tz(endTime, 'Asia/Taipei');
+
+      // 檢查事件是否完全覆蓋檢查時間範圍
+      return (eventStart.isBefore(checkEndMoment) && eventEnd.isAfter(checkStartMoment)) ||
+             (eventEnd.isSameOrAfter(checkStartMoment) && eventStart.isBefore(checkStartMoment));
     });
 
     // 如果沒有衝突或僅有結束時間在檢查範圍內，則可用
-    return { isAvailable: masterEvents.length === 0 };
+    if (masterEvents.length === 0) {
+      return { isAvailable: true };
+    }
+
+    // 檢查是否有結束時間緊接著檢查範圍的開始時間
+    const lastEvent = masterEvents.sort((a, b) => moment.tz(b.end.dateTime, 'Asia/Taipei').diff(moment.tz(a.end.dateTime, 'Asia/Taipei')))[0];
+    const endTimeMoment = moment.tz(lastEvent.end.dateTime, 'Asia/Taipei');
+    const checkStartMoment = moment.tz(startTime, 'Asia/Taipei');
+
+    if (endTimeMoment.isSameOrBefore(checkStartMoment)) {
+      return { isAvailable: true }; // 結束時間已過，允許立即預約
+    }
+
+    return { isAvailable: false };
   } catch (error) {
     console.error('❌ 檢查師傅可用性失敗:', error.message);
     throw error;
@@ -465,7 +482,7 @@ server.post('/booking', async (req, res) => {
       return res.status(400).send({ 
         success: false, 
         message: businessCheck.message,
-        nextAvailableTime: null, // 可選，提示下一個營業時間
+        nextAvailableTime: null, 
       });
     }
 
@@ -529,7 +546,7 @@ server.post('/booking', async (req, res) => {
     res.status(200).send({ success: true, message: '預約成功！', eventIds });
   } catch (error) {
     console.error('❌ 創建事件失敗:', error.message);
-    res.status(500).send({ success: false, message: '創建事件失敗，請稍後再試！' });
+    res.status(500).send({ success: false, message: `創建事件失敗，請稍後再試！ 錯誤詳情: ${error.message}` });
   }
 });
 
