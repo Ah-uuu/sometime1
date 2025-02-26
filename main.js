@@ -7,7 +7,7 @@ const fetch = require('node-fetch');
 require('dotenv').config();
 
 const server = express();
-server.use(cors({ origin: 'https://sometime-1.netlify.app' }));
+server.use(cors({ origin: 'https://booking-sometime-0.onrender.com' }));
 server.use(bodyParser.json());
 
 // 環境變數設置
