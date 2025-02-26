@@ -185,7 +185,7 @@ function checkBusinessHours(appointmentTime, duration) {
   return { isValid: true };
 }
 
-// 查找下一個可用時段（並行檢查場地和師傅，優先場地）
+// 查找下一個可用時段（僅檢查場地，精確到 1 分鐘，處理結束時間）
 async function findNextAvailableTime(service, startTime, duration, master) {
   const serviceConfig = SERVICES[service];
   if (!serviceConfig) return null;
@@ -205,14 +205,10 @@ async function findNextAvailableTime(service, startTime, duration, master) {
       continue;
     }
 
-    // 並行檢查場地（資源）和師傅的可用性
-    const [resourceAvailability, therapistAvailability] = await Promise.all([
-      checkResourceAvailability(service, checkStart, checkEnd),
-      master ? checkTherapistAvailability(master, checkStart, checkEnd) : Promise.resolve({ isAvailable: true }),
-    ]);
-
+    // 僅檢查場地的可用性（忽略師傅）
+    const resourceAvailability = await checkResourceAvailability(service, checkStart, checkEnd);
     if (resourceAvailability.isAvailable) {
-      return checkStart; // 場地可用，立即返回，忽略師傅衝突
+      return checkStart;
     }
 
     currentTime.add(1, 'minutes'); // 每 1 分鐘檢查一次
@@ -221,7 +217,7 @@ async function findNextAvailableTime(service, startTime, duration, master) {
   return null; // 24 小時內無可用時段
 }
 
-// 檢查資源（床位/腳位）可用性
+// 檢查資源（床位/腳位）可用性（精確處理結束時間）
 async function checkResourceAvailability(service, startTime, endTime) {
   const serviceConfig = SERVICES[service];
   const components = serviceConfig.components || [service];
@@ -243,10 +239,22 @@ async function checkResourceAvailability(service, startTime, endTime) {
         const maxCapacity = RESOURCE_CAPACITY[res];
         const serviceEvents = events.filter(event => {
           const eventService = event.summary.split(' 預約：')[0];
-          return SERVICES[eventService]?.resource.includes(res);
+          if (!SERVICES[eventService]) return false;
+          const eventResource = Array.isArray(SERVICES[eventService].resource) ? SERVICES[eventService].resource : [SERVICES[eventService].resource];
+          return eventResource.includes(res);
         });
 
-        if (serviceEvents.length >= maxCapacity) {
+        // 檢查事件是否完全覆蓋目標時段
+        const overlappingEvents = serviceEvents.filter(event => {
+          const eventStart = moment.tz(event.start.dateTime || event.start.date, 'Asia/Taipei');
+          const eventEnd = moment.tz(event.end.dateTime || event.end.date, 'Asia/Taipei');
+          const checkStartMoment = moment.tz(startTime, 'Asia/Taipei');
+          const checkEndMoment = moment.tz(endTime, 'Asia/Taipei');
+
+          return eventStart.isBefore(checkEndMoment) && eventEnd.isAfter(checkStartMoment);
+        });
+
+        if (overlappingEvents.length >= maxCapacity) {
           return { isAvailable: false };
         }
       }
@@ -307,10 +315,21 @@ async function checkAvailability(service, startTime, endTime, master) {
         const maxCapacity = RESOURCE_CAPACITY[res];
         const serviceEvents = events.filter(event => {
           const eventService = event.summary.split(' 預約：')[0];
-          return SERVICES[eventService]?.resource.includes(res);
+          if (!SERVICES[eventService]) return false;
+          const eventResource = Array.isArray(SERVICES[eventService].resource) ? SERVICES[eventService].resource : [SERVICES[eventService].resource];
+          return eventResource.includes(res);
         });
 
-        if (serviceEvents.length >= maxCapacity) {
+        const overlappingEvents = serviceEvents.filter(event => {
+          const eventStart = moment.tz(event.start.dateTime || event.start.date, 'Asia/Taipei');
+          const eventEnd = moment.tz(event.end.dateTime || event.end.date, 'Asia/Taipei');
+          const checkStartMoment = moment.tz(startTime, 'Asia/Taipei');
+          const checkEndMoment = moment.tz(endTime, 'Asia/Taipei');
+
+          return eventStart.isBefore(checkEndMoment) && eventEnd.isAfter(checkStartMoment);
+        });
+
+        if (overlappingEvents.length >= maxCapacity) {
           const nextTime = await findNextAvailableTime(service, endTime, serviceConfig.duration, null); // 忽略師傅，查找最快場地
           let message = `${comp} 在該時段已達最大容客量 (${maxCapacity} 人)`;
           if (master) {
