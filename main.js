@@ -186,7 +186,7 @@ function checkBusinessHours(appointmentTime, duration) {
   return { isValid: true };
 }
 
-// 查找下一個可用時段（優先師傅空檔，精確到 1 分鐘）
+// 查找下一個可用時段（優先師傅空檔，精確到 1 分鐘，處理結束時間）
 async function findNextAvailableTime(service, startTime, duration, master) {
   const serviceConfig = SERVICES[service];
   if (!serviceConfig) return null;
@@ -202,7 +202,7 @@ async function findNextAvailableTime(service, startTime, duration, master) {
     // 檢查營業時間
     const businessCheck = checkBusinessHours(checkStart, duration);
     if (!businessCheck.isValid) {
-      currentTime.add(1, 'minutes'); // 檢查間隔縮短為 1 分鐘
+      currentTime.add(1, 'minutes'); // 檢查間隔為 1 分鐘
       continue;
     }
 
@@ -268,7 +268,7 @@ async function checkResourceAvailability(service, startTime, endTime) {
   }
 }
 
-// 檢查師傅可用性（考慮結束時間）
+// 檢查師傅可用性（精確處理結束時間）
 async function checkTherapistAvailability(master, startTime, endTime) {
   try {
     const response = await calendar.events.list({
@@ -280,9 +280,14 @@ async function checkTherapistAvailability(master, startTime, endTime) {
     });
 
     const events = response.data.items || [];
-    const masterEvents = events.filter(event => event.extendedProperties?.private?.master === master);
+    const masterEvents = events.filter(event => {
+      if (!event.extendedProperties?.private?.master === master) return false;
+      const eventStart = moment.tz(event.start.dateTime || event.start.date, 'Asia/Taipei');
+      const eventEnd = moment.tz(event.end.dateTime || event.end.date, 'Asia/Taipei');
+      return eventEnd.isSameOrAfter(moment.tz(startTime, 'Asia/Taipei')) && eventStart.isSameOrBefore(moment.tz(endTime, 'Asia/Taipei'));
+    });
 
-    // 檢查是否有衝突（包括結束時間後的可用性）
+    // 如果沒有衝突或僅有結束時間在檢查範圍內，則可用
     return { isAvailable: masterEvents.length === 0 };
   } catch (error) {
     console.error('❌ 檢查師傅可用性失敗:', error.message);
