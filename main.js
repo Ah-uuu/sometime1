@@ -185,7 +185,7 @@ function checkBusinessHours(appointmentTime, duration) {
   return { isValid: true };
 }
 
-// 查找指定日期的最快可用時段（僅檢查場地，忽略師傅，優化性能）
+// 查找指定日期的最快可用時段（僅檢查場地，忽略師傅，優化至 10 分鐘間隔）
 async function findNextAvailableTime(service, targetDate) {
   const serviceConfig = SERVICES[service];
   if (!serviceConfig) return null;
@@ -202,7 +202,7 @@ async function findNextAvailableTime(service, targetDate) {
     // 檢查營業時間
     const businessCheck = checkBusinessHours(checkStart, serviceConfig.duration);
     if (!businessCheck.isValid) {
-      currentTime.add(5, 'minutes'); // 增加檢查間隔至 5 分鐘，優化性能
+      currentTime.add(10, 'minutes'); // 增加檢查間隔至 10 分鐘
       continue;
     }
 
@@ -212,7 +212,7 @@ async function findNextAvailableTime(service, targetDate) {
       return checkStart;
     }
 
-    currentTime.add(5, 'minutes'); // 每 5 分鐘檢查一次
+    currentTime.add(10, 'minutes'); // 每 10 分鐘檢查一次
   }
 
   return null; // 當天無可用時段
@@ -378,7 +378,12 @@ server.get('/available-times', async (req, res) => {
       return res.status(400).send({ success: false, message: '無效的日期格式' });
     }
 
+    const startTime = moment.tz(targetDate).startOf('day').toISOString();
+    const endTime = moment.tz(targetDate).endOf('day').toISOString();
+    console.time('AvailableTimeSearch');
     const nextAvailableTime = await findNextAvailableTime(service, targetDate);
+    console.timeEnd('AvailableTimeSearch');
+
     if (nextAvailableTime) {
       res.status(200).send({
         success: true,
