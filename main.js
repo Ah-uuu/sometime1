@@ -185,7 +185,7 @@ function checkBusinessHours(appointmentTime, duration) {
   return { isValid: true };
 }
 
-// 查找指定日期的最快可用時段（僅檢查場地，忽略師傅）
+// 查找指定日期的最快可用時段（僅檢查場地，忽略師傅，優化性能）
 async function findNextAvailableTime(service, targetDate) {
   const serviceConfig = SERVICES[service];
   if (!serviceConfig) return null;
@@ -202,7 +202,7 @@ async function findNextAvailableTime(service, targetDate) {
     // 檢查營業時間
     const businessCheck = checkBusinessHours(checkStart, serviceConfig.duration);
     if (!businessCheck.isValid) {
-      currentTime.add(1, 'minutes'); // 檢查間隔為 1 分鐘
+      currentTime.add(5, 'minutes'); // 增加檢查間隔至 5 分鐘，優化性能
       continue;
     }
 
@@ -212,7 +212,7 @@ async function findNextAvailableTime(service, targetDate) {
       return checkStart;
     }
 
-    currentTime.add(1, 'minutes'); // 每 1 分鐘檢查一次
+    currentTime.add(5, 'minutes'); // 每 5 分鐘檢查一次
   }
 
   return null; // 當天無可用時段
@@ -340,7 +340,7 @@ async function checkAvailability(service, startTime, endTime, master) {
           let message = `${comp} 在該時段已達最大容客量 (${maxCapacity} 人)`;
           return {
             isAvailable: false,
-            message: message + '，請點擊「今日可預約時段」查看可用時間',
+            message: message + '，請點擊「當日可預約時段」查看可用時間',
             nextAvailableTime: null,
           };
         }
@@ -353,7 +353,7 @@ async function checkAvailability(service, startTime, endTime, master) {
       if (!therapistAvailability.isAvailable) {
         return {
           isAvailable: false,
-          message: `師傅 ${master} 在該時段已有預約，請點擊「今日可預約時段」查看可用時間`,
+          message: `師傅 ${master} 在該時段已有預約，請點擊「當日可預約時段」查看可用時間`,
           nextAvailableTime: null,
         };
       }
@@ -366,14 +366,14 @@ async function checkAvailability(service, startTime, endTime, master) {
   }
 }
 
-// 新增 API：查詢當天最快可預約時段
+// 新增 API：查詢指定日期最快可預約時段
 server.get('/available-times', async (req, res) => {
   try {
     const { service, date } = req.query;
     if (!service || !SERVICES[service]) {
       return res.status(400).send({ success: false, message: '無效的服務類型' });
     }
-    const targetDate = date ? moment.tz(date, 'Asia/Taipei') : moment.tz('Asia/Taipei');
+    const targetDate = moment.tz(date, 'Asia/Taipei');
     if (!targetDate.isValid()) {
       return res.status(400).send({ success: false, message: '無效的日期格式' });
     }
@@ -385,7 +385,7 @@ server.get('/available-times', async (req, res) => {
         nextAvailableTime: moment.tz(nextAvailableTime, 'Asia/Taipei').format('YYYY-MM-DD HH:mm:ss'),
       });
     } else {
-      res.status(200).send({ success: false, message: '當天無可用時段' });
+      res.status(200).send({ success: false, message: '指定日期無可用時段' });
     }
   } catch (error) {
     console.error('❌ 查詢可用時段失敗:', error.message);
@@ -499,7 +499,7 @@ server.post('/booking', async (req, res) => {
     if (!businessCheck.isValid) {
       return res.status(400).send({ 
         success: false, 
-        message: businessCheck.message + '，請點擊「今日可預約時段」查看可用時間',
+        message: businessCheck.message + '，請點擊「當日可預約時段」查看可用時間',
         nextAvailableTime: null, 
       });
     }
