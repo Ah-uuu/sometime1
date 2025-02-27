@@ -202,7 +202,7 @@ async function findNextAvailableTime(service, targetDate) {
     // 檢查營業時間
     const businessCheck = checkBusinessHours(checkStart, serviceConfig.duration);
     if (!businessCheck.isValid) {
-      currentTime.add(10, 'minutes'); // 增加檢查間隔至 10 分鐘
+      currentTime.add(10, 'minutes'); // 檢查間隔為 10 分鐘
       continue;
     }
 
@@ -373,7 +373,10 @@ server.get('/available-times', async (req, res) => {
     if (!service || !SERVICES[service]) {
       return res.status(400).send({ success: false, message: '無效的服務類型' });
     }
-    const targetDate = moment.tz(date, 'Asia/Taipei');
+    if (!date || typeof date !== 'string') {
+      return res.status(400).send({ success: false, message: '無效的日期格式' });
+    }
+    const targetDate = moment.tz(date, 'YYYY-MM-DD', 'Asia/Taipei');
     if (!targetDate.isValid()) {
       return res.status(400).send({ success: false, message: '無效的日期格式' });
     }
