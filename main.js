@@ -136,7 +136,7 @@ function checkBusinessHours(appointmentTime, duration) {
   return { isValid: true };
 }
 
-// 查找指定日期的最快可用時段
+// 查找指定日期的最快可用時段（整間店）
 async function findNextAvailableTime(service, targetDate) {
   const serviceConfig = SERVICES[service];
   if (!serviceConfig) return null;
@@ -167,6 +167,50 @@ async function findNextAvailableTime(service, targetDate) {
     }
 
     currentTime.add(5, 'minutes');
+  }
+
+  return null;
+}
+
+// 查找指定師傅的最快可用時段（優化版）
+async function findTherapistNextAvailableTime(master, targetDate, service) {
+  const serviceConfig = SERVICES[service];
+  if (!serviceConfig) return null;
+
+  const today = targetDate.clone().startOf('day');
+  const searchEnd = targetDate.clone().endOf('day');
+  const now = moment.tz('Asia/Taipei');
+
+  let currentTime = today.clone().isBefore(now) ? now.clone() : today.clone();
+  if (currentTime.minute() % 10 !== 0) {
+    currentTime.add(10 - (currentTime.minute() % 10), 'minutes'); // 改為每 10 分鐘檢查一次
+  }
+
+  while (currentTime.isBefore(searchEnd)) {
+    const checkStart = currentTime.clone().toISOString();
+    const checkEnd = currentTime.clone().add(serviceConfig.duration, 'minutes').toISOString();
+
+    // 檢查營業時間
+    const businessCheck = checkBusinessHours(checkStart, serviceConfig.duration);
+    if (!businessCheck.isValid) {
+      currentTime.add(10, 'minutes');
+      continue;
+    }
+
+    // 檢查資源可用性
+    const resourceAvailability = await checkResourceAvailability(service, checkStart, checkEnd);
+    if (!resourceAvailability.isAvailable) {
+      currentTime.add(10, 'minutes');
+      continue;
+    }
+
+    // 檢查師傅可用性
+    const therapistAvailability = await checkTherapistAvailability(master, checkStart, checkEnd);
+    if (therapistAvailability.isAvailable) {
+      return checkStart;
+    }
+
+    currentTime.add(10, 'minutes'); // 每 10 分鐘檢查一次
   }
 
   return null;
@@ -303,9 +347,19 @@ async function checkAvailability(service, startTime, endTime, master) {
     if (master) {
       const therapistAvailability = await checkTherapistAvailability(master, startTime, endTime);
       if (!therapistAvailability.isAvailable) {
+        // 計算師傅的最快可用時段
+        const targetDate = moment.tz(startTime, 'Asia/Taipei');
+        const nextAvailableTime = await findTherapistNextAvailableTime(master, targetDate, service);
+        let message = `師傅 ${master} 在該時段已有預約`;
+        if (nextAvailableTime) {
+          const formattedTime = moment.tz(nextAvailableTime, 'Asia/Taipei').format('YYYY-MM-DD HH:mm:ss');
+          message += `\n${master} 最快可用時段：${formattedTime}`;
+        } else {
+          message += `\n${master} 當日無其他可用時段`;
+        }
         return {
           isAvailable: false,
-          message: `師傅 ${master} 在該時段已有預約，請點擊「當日可預約時段」查看可用時間`,
+          message: message,
           nextAvailableTime: null,
         };
       }
@@ -318,7 +372,7 @@ async function checkAvailability(service, startTime, endTime, master) {
   }
 }
 
-// 查詢指定日期最快可預約時段 API
+// 查詢指定日期最快可預約時段 API（整間店）
 server.get('/available-times', async (req, res) => {
   try {
     const { service, date } = req.query;
