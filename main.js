@@ -329,7 +329,7 @@ async function checkAvailability(guests, startTime, endTime) {
   if (!resourceAvailability.isAvailable) {
     return {
       isAvailable: false,
-      message: '該時段場地容量不足，無法容納所有顧客，請點擊「當日可預約時段」查看可用時間',
+      message: '該時段場地容量不足，無法容納所有顧客，請點擊「當日可預約時段」查看可用時間\n該店最大同時容客量 3位身體 2位腳底',
     };
   }
 
@@ -429,7 +429,7 @@ async function appendToSpreadsheet({ name, phone, guests, appointmentTime }) {
       console.log(`✅ 為日期 ${sheetName} 創建新工作表`);
     }
 
-    const values = guests.map((guest, index) => [
+    const values = guests.map((index, guest) => [
       date,
       `${name} (顧客 ${String.fromCharCode(65 + index)})`,
       phone,
