@@ -496,6 +496,8 @@ server.post('/booking', async (req, res) => {
 
     const events = [];
     const eventIds = [];
+    const isSingleGuest = guests.length === 1; // 判斷是否為單人預約
+
     for (const [index, guest] of guests.entries()) {
       const serviceConfig = SERVICES[guest.service];
       const duration = serviceConfig.duration;
@@ -514,8 +516,11 @@ server.post('/booking', async (req, res) => {
           colorId = MASTER_COLORS[''];
         }
 
+        // 根據是否為單人預約，動態生成事件標題
+        const guestLabel = isSingleGuest ? '' : ` (顧客 ${String.fromCharCode(65 + index)})`;
+        const masterInfo = guest.master ? ` 指定: ${guest.master}` : ' 不指定';
         const event = {
-          summary: `${comp} 預約：${name} (顧客 ${String.fromCharCode(65 + index)})`,
+          summary: `${comp} 預約：${name}${guestLabel}${masterInfo}`,
           description: `電話：${phone}${guest.master ? `\n師傅：${guest.master}` : ''}\n原始服務：${guest.service}\n總時長：${duration} 分鐘`,
           start: { dateTime: currentTime.toISOString(), timeZone: 'Asia/Taipei' },
           end: { dateTime: currentTime.clone().add(compDuration, 'minutes').toISOString(), timeZone: 'Asia/Taipei' },
