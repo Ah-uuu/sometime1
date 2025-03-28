@@ -191,7 +191,6 @@ async function checkResourceAvailabilityForMultiple(services, startTime, endTime
 
     // 計算現有事件的資源使用量
     for (const event of events) {
-      // 檢查 event.summary 是否存在且為字串
       if (!event.summary || typeof event.summary !== 'string') {
         console.warn(`⚠️ 事件 ${event.id} 缺少 summary，跳過該事件`);
         continue;
@@ -255,7 +254,6 @@ async function checkResourceAvailability(service, startTime, endTime) {
       for (const res of resource) {
         const maxCapacity = RESOURCE_CAPACITY[res];
         const serviceEvents = events.filter(event => {
-          // 檢查 event.summary 是否存在且為字串
           if (!event.summary || typeof event.summary !== 'string') {
             console.warn(`⚠️ 事件 ${(event.id || '未知事件')} 缺少 summary，跳過該事件`);
             return false;
@@ -292,7 +290,6 @@ async function checkResourceAvailability(service, startTime, endTime) {
 // 檢查師傅可用性（改用 colorId 檢查）
 async function checkTherapistAvailability(master, startTime, endTime) {
   try {
-    // 檢查 MASTER_COLORS 中是否有該師傅的 colorId
     const masterColorId = MASTER_COLORS[master];
     if (!masterColorId) {
       console.error(`❌ 師傅 ${master} 在 MASTER_COLORS 中未定義 colorId`);
@@ -308,7 +305,6 @@ async function checkTherapistAvailability(master, startTime, endTime) {
     });
 
     const events = response.data.items || [];
-    // 檢查該時段內是否有事件的 colorId 與師傅的 colorId 相同
     const masterEvents = events.filter(event => event.colorId === masterColorId);
 
     console.log(`檢查師傅 ${master} (${masterColorId}) 在 ${startTime} 至 ${endTime} 的可用性：${masterEvents.length === 0 ? '可用' : '已被占用'}`);
@@ -324,7 +320,6 @@ async function checkAvailability(guests, startTime, endTime) {
   const services = guests.map(guest => guest.service);
   const masters = guests.map(guest => guest.master).filter(master => master);
 
-  // 檢查服務是否有效
   for (const service of services) {
     if (!SERVICES[service]) {
       return { isAvailable: false, message: `無效的服務類型: ${service}` };
@@ -336,14 +331,12 @@ async function checkAvailability(guests, startTime, endTime) {
     return { isAvailable: false, message: '無法預約過去的時間，請選擇未來時段' };
   }
 
-  // 檢查營業時間
   const maxDuration = Math.max(...services.map(service => SERVICES[service].duration));
   const businessCheck = checkBusinessHours(startTime, maxDuration);
   if (!businessCheck.isValid) {
     return { isAvailable: false, message: businessCheck.message + '，請點擊「當日可預約時段」查看可用時間' };
   }
 
-  // 檢查資源可用性
   const resourceAvailability = await checkResourceAvailabilityForMultiple(services, startTime, endTime);
   if (!resourceAvailability.isAvailable) {
     return {
@@ -352,7 +345,6 @@ async function checkAvailability(guests, startTime, endTime) {
     };
   }
 
-  // 檢查師傅可用性
   for (const guest of guests) {
     if (guest.master) {
       const serviceConfig = SERVICES[guest.service];
@@ -448,18 +440,25 @@ async function appendToSpreadsheet({ name, phone, guests, appointmentTime }) {
       console.log(`✅ 為日期 ${sheetName} 創建新工作表`);
     }
 
-    const values = guests.map((index, guest) => [
-      date,
-      `${name} (顧客 ${String.fromCharCode(65 + index)})`,
-      phone,
-      guest.service.split('_')[0],
-      SERVICES[guest.service].duration,
-      time,
-      guest.master || '',
-      '',
-      '',
-      '',
-    ]);
+    const values = guests.map((guest, index) => {
+      // 檢查 guest.service 是否存在且為字串
+      if (!guest.service || typeof guest.service !== 'string') {
+        console.error(`❌ 顧客 ${index + 1} 缺少有效的服務類型: ${JSON.stringify(guest)}`);
+        throw new Error(`顧客 ${index + 1} 缺少有效的服務類型`);
+      }
+      return [
+        date,
+        `${name} (顧客 ${String.fromCharCode(65 + index)})`,
+        phone,
+        guest.service.split('_')[0],
+        SERVICES[guest.service].duration,
+        time,
+        guest.master || '',
+        '',
+        '',
+        '',
+      ];
+    });
 
     await sheets.spreadsheets.values.append({
       spreadsheetId: SPREADSHEET_ID,
@@ -485,6 +484,9 @@ server.post('/booking', async (req, res) => {
   try {
     const { name, phone, guests, appointmentTime } = req.body;
 
+    // 記錄請求資料以便排查
+    console.log('收到預約請求:', JSON.stringify(req.body));
+
     if (!name || !phone || !guests || !appointmentTime) {
       return res.status(400).send({ success: false, message: '缺少必要的欄位' });
     }
@@ -495,8 +497,14 @@ server.post('/booking', async (req, res) => {
       return res.status(400).send({ success: false, message: '顧客人數無效，必須為 1 到 3 人' });
     }
 
-    for (const guest of guests) {
+    // 加強檢查：確保每個 guest 都有 service 屬性且有效
+    for (const [index, guest] of guests.entries()) {
+      if (!guest.service || typeof guest.service !== 'string') {
+        console.error(`❌ 顧客 ${index + 1} 缺少服務類型: ${JSON.stringify(guest)}`);
+        return res.status(400).send({ success: false, message: `顧客 ${index + 1} 缺少服務類型` });
+      }
       if (!SERVICES[guest.service]) {
+        console.error(`❌ 顧客 ${index + 1} 服務類型無效: ${guest.service}`);
         return res.status(400).send({ success: false, message: `無效的服務類型: ${guest.service}` });
       }
     }
@@ -515,7 +523,7 @@ server.post('/booking', async (req, res) => {
 
     const events = [];
     const eventIds = [];
-    const isSingleGuest = guests.length === 1; // 判斷是否為單人預約
+    const isSingleGuest = guests.length === 1;
 
     for (const [index, guest] of guests.entries()) {
       const serviceConfig = SERVICES[guest.service];
@@ -535,7 +543,6 @@ server.post('/booking', async (req, res) => {
           colorId = MASTER_COLORS[''];
         }
 
-        // 根據是否為單人預約，動態生成事件標題
         const guestLabel = isSingleGuest ? '' : ` (顧客 ${String.fromCharCode(65 + index)})`;
         const masterInfo = guest.master ? ` 指定: ${guest.master}` : ' 不指定';
         const event = {
