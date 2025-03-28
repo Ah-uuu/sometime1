@@ -279,9 +279,16 @@ async function checkResourceAvailability(service, startTime, endTime) {
   }
 }
 
-// 檢查師傅可用性
+// 檢查師傅可用性（改用 colorId 檢查）
 async function checkTherapistAvailability(master, startTime, endTime) {
   try {
+    // 檢查 MASTER_COLORS 中是否有該師傅的 colorId
+    const masterColorId = MASTER_COLORS[master];
+    if (!masterColorId) {
+      console.error(`❌ 師傅 ${master} 在 MASTER_COLORS 中未定義 colorId`);
+      return { isAvailable: false, message: `師傅 ${master} 未定義顏色，請聯繫管理員` };
+    }
+
     const response = await calendar.events.list({
       calendarId: CALENDAR_ID,
       timeMin: startTime,
@@ -291,8 +298,10 @@ async function checkTherapistAvailability(master, startTime, endTime) {
     });
 
     const events = response.data.items || [];
-    const masterEvents = events.filter(event => event.extendedProperties?.private?.master === master);
+    // 檢查該時段內是否有事件的 colorId 與師傅的 colorId 相同
+    const masterEvents = events.filter(event => event.colorId === masterColorId);
 
+    console.log(`檢查師傅 ${master} (${masterColorId}) 在 ${startTime} 至 ${endTime} 的可用性：${masterEvents.length === 0 ? '可用' : '已被占用'}`);
     return { isAvailable: masterEvents.length === 0 };
   } catch (error) {
     console.error('❌ 檢查師傅可用性失敗:', error.message);
@@ -524,7 +533,7 @@ server.post('/booking', async (req, res) => {
           description: `電話：${phone}${guest.master ? `\n師傅：${guest.master}` : ''}\n原始服務：${guest.service}\n總時長：${duration} 分鐘`,
           start: { dateTime: currentTime.toISOString(), timeZone: 'Asia/Taipei' },
           end: { dateTime: currentTime.clone().add(compDuration, 'minutes').toISOString(), timeZone: 'Asia/Taipei' },
-          extendedProperties: guest.master ? { private: { master: guest.master } } : undefined,
+          // 移除 extendedProperties，因為現在使用 colorId 來判斷師傅
           colorId: colorId,
         };
         const response = await calendar.events.insert({
