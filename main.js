@@ -191,6 +191,11 @@ async function checkResourceAvailabilityForMultiple(services, startTime, endTime
 
     // 計算現有事件的資源使用量
     for (const event of events) {
+      // 檢查 event.summary 是否存在且為字串
+      if (!event.summary || typeof event.summary !== 'string') {
+        console.warn(`⚠️ 事件 ${event.id} 缺少 summary，跳過該事件`);
+        continue;
+      }
       const eventService = event.summary.split(' 預約：')[0];
       if (!SERVICES[eventService]) continue;
       const eventResource = Array.isArray(SERVICES[eventService].resource)
@@ -250,6 +255,11 @@ async function checkResourceAvailability(service, startTime, endTime) {
       for (const res of resource) {
         const maxCapacity = RESOURCE_CAPACITY[res];
         const serviceEvents = events.filter(event => {
+          // 檢查 event.summary 是否存在且為字串
+          if (!event.summary || typeof event.summary !== 'string') {
+            console.warn(`⚠️ 事件 ${(event.id || '未知事件')} 缺少 summary，跳過該事件`);
+            return false;
+          }
           const eventService = event.summary.split(' 預約：')[0];
           if (!SERVICES[eventService]) return false;
           const eventResource = Array.isArray(SERVICES[eventService].resource) ? SERVICES[eventService].resource : [SERVICES[eventService].resource];
@@ -533,7 +543,6 @@ server.post('/booking', async (req, res) => {
           description: `電話：${phone}${guest.master ? `\n師傅：${guest.master}` : ''}\n原始服務：${guest.service}\n總時長：${duration} 分鐘`,
           start: { dateTime: currentTime.toISOString(), timeZone: 'Asia/Taipei' },
           end: { dateTime: currentTime.clone().add(compDuration, 'minutes').toISOString(), timeZone: 'Asia/Taipei' },
-          // 移除 extendedProperties，因為現在使用 colorId 來判斷師傅
           colorId: colorId,
         };
         const response = await calendar.events.insert({
