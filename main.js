@@ -189,7 +189,6 @@ async function checkResourceAvailabilityForMultiple(services, startTime, endTime
     const events = response.data.items || [];
     const resourceUsage = { body: 0, foot: 0 };
 
-    // 計算現有事件的資源使用量
     for (const event of events) {
       if (!event.summary || typeof event.summary !== 'string') {
         console.warn(`⚠️ 事件 ${event.id} 缺少 summary，跳過該事件`);
@@ -205,7 +204,6 @@ async function checkResourceAvailabilityForMultiple(services, startTime, endTime
       });
     }
 
-    // 計算新預約的資源需求
     const newResourceUsage = { body: 0, foot: 0 };
     for (const service of services) {
       const serviceConfig = SERVICES[service];
@@ -218,7 +216,6 @@ async function checkResourceAvailabilityForMultiple(services, startTime, endTime
       });
     }
 
-    // 檢查總資源使用量是否超過容量
     for (const res in newResourceUsage) {
       const totalUsage = resourceUsage[res] + newResourceUsage[res];
       if (totalUsage > RESOURCE_CAPACITY[res]) {
@@ -287,8 +284,8 @@ async function checkResourceAvailability(service, startTime, endTime) {
   }
 }
 
-// 檢查師傅可用性（改用 colorId 檢查）
-async function checkTherapistAvailability(master, startTime, endTime) {
+// 檢查師傅可用性（改用 colorId 檢查，並添加最快可用時段）
+async function checkTherapistAvailability(master, startTime, endTime, duration) {
   try {
     const masterColorId = MASTER_COLORS[master];
     if (!masterColorId) {
@@ -296,6 +293,7 @@ async function checkTherapistAvailability(master, startTime, endTime) {
       return { isAvailable: false, message: `師傅 ${master} 未定義顏色，請聯繫管理員` };
     }
 
+    // 檢查指定時段內是否有該師傅的預約
     const response = await calendar.events.list({
       calendarId: CALENDAR_ID,
       timeMin: startTime,
@@ -308,7 +306,51 @@ async function checkTherapistAvailability(master, startTime, endTime) {
     const masterEvents = events.filter(event => event.colorId === masterColorId);
 
     console.log(`檢查師傅 ${master} (${masterColorId}) 在 ${startTime} 至 ${endTime} 的可用性：${masterEvents.length === 0 ? '可用' : '已被占用'}`);
-    return { isAvailable: masterEvents.length === 0 };
+
+    if (masterEvents.length === 0) {
+      return { isAvailable: true };
+    }
+
+    // 如果師傅不可用，計算下一個可用時段
+    let currentTime = moment.tz(endTime, 'Asia/Taipei');
+    const searchEnd = currentTime.clone().endOf('day');
+    let nextAvailableTime = null;
+
+    while (currentTime.isBefore(searchEnd)) {
+      const checkStart = currentTime.clone().toISOString();
+      const checkEnd = currentTime.clone().add(duration, 'minutes').toISOString();
+
+      // 檢查營業時間
+      const businessCheck = checkBusinessHours(checkStart, duration);
+      if (!businessCheck.isValid) {
+        currentTime.add(5, 'minutes');
+        continue;
+      }
+
+      // 檢查該時段是否有該師傅的預約
+      const futureResponse = await calendar.events.list({
+        calendarId: CALENDAR_ID,
+        timeMin: checkStart,
+        timeMax: checkEnd,
+        singleEvents: true,
+        orderBy: 'startTime',
+      });
+
+      const futureEvents = futureResponse.data.items || [];
+      const futureMasterEvents = futureEvents.filter(event => event.colorId === masterColorId);
+
+      if (futureMasterEvents.length === 0) {
+        nextAvailableTime = checkStart;
+        break;
+      }
+
+      currentTime.add(5, 'minutes');
+    }
+
+    return {
+      isAvailable: false,
+      nextAvailableTime: nextAvailableTime ? moment.tz(nextAvailableTime, 'Asia/Taipei').format('YYYY-MM-DD HH:mm') : null,
+    };
   } catch (error) {
     console.error('❌ 檢查師傅可用性失敗:', error.message);
     throw error;
@@ -349,11 +391,14 @@ async function checkAvailability(guests, startTime, endTime) {
     if (guest.master) {
       const serviceConfig = SERVICES[guest.service];
       const guestEndTime = moment.tz(startTime, 'Asia/Taipei').add(serviceConfig.duration, 'minutes').toISOString();
-      const therapistAvailability = await checkTherapistAvailability(guest.master, startTime, guestEndTime);
+      const therapistAvailability = await checkTherapistAvailability(guest.master, startTime, guestEndTime, serviceConfig.duration);
       if (!therapistAvailability.isAvailable) {
+        const nextAvailableMessage = therapistAvailability.nextAvailableTime
+          ? `，最快可接客時間為 ${therapistAvailability.nextAvailableTime}`
+          : '，今日已無空檔';
         return {
           isAvailable: false,
-          message: `師傅 ${guest.master} 在該時段已有預約，請選擇其他師傅或點擊「當日可預約時段」查看可用時間`,
+          message: `師傅 ${guest.master} 在該時段已有預約${nextAvailableMessage}，請選擇其他師傅或點擊「當日可預約時段」查看可用時間`,
         };
       }
     }
@@ -441,7 +486,6 @@ async function appendToSpreadsheet({ name, phone, guests, appointmentTime }) {
     }
 
     const values = guests.map((guest, index) => {
-      // 檢查 guest.service 是否存在且為字串
       if (!guest.service || typeof guest.service !== 'string') {
         console.error(`❌ 顧客 ${index + 1} 缺少有效的服務類型: ${JSON.stringify(guest)}`);
         throw new Error(`顧客 ${index + 1} 缺少有效的服務類型`);
@@ -484,7 +528,6 @@ server.post('/booking', async (req, res) => {
   try {
     const { name, phone, guests, appointmentTime } = req.body;
 
-    // 記錄請求資料以便排查
     console.log('收到預約請求:', JSON.stringify(req.body));
 
     if (!name || !phone || !guests || !appointmentTime) {
@@ -497,7 +540,6 @@ server.post('/booking', async (req, res) => {
       return res.status(400).send({ success: false, message: '顧客人數無效，必須為 1 到 3 人' });
     }
 
-    // 加強檢查：確保每個 guest 都有 service 屬性且有效
     for (const [index, guest] of guests.entries()) {
       if (!guest.service || typeof guest.service !== 'string') {
         console.error(`❌ 顧客 ${index + 1} 缺少服務類型: ${JSON.stringify(guest)}`);
